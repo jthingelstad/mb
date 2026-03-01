@@ -205,6 +205,7 @@ mb memory recall --category core-memory             Recall specific category
 mb memory recall --search "dark mode"               Search within memories
 mb memory recall --count 50                         Control result count
 mb memory categories                                List all categories in use
+mb memory guide                                     Print agent usage guide
 ```
 
 The agent is free to create any categories it needs. Example category taxonomy:
@@ -213,6 +214,16 @@ The agent is free to create any categories it needs. Example category taxonomy:
 - `preferences` — user preferences
 - `journal` — session logs or reflections
 - `context` — conversation context to remember
+
+### Agent Skill Integration
+
+`mb memory guide` outputs a complete usage guide that an agent can consume at session start. This guide covers recommended categories, common patterns (session start/end, corrections, private memories), and best practices. Agents should run this command once to learn the memory system, then use memory commands throughout their session.
+
+**Recommended agent session lifecycle:**
+
+1. **Session start:** `mb memory recall -c core-memory` and `mb memory recall -c preferences` to load context
+2. **During session:** Store important facts as they arise with `mb memory add`
+3. **Session end:** Persist learnings with appropriate categories
 
 ### Utilities
 
