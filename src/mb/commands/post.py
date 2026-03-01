@@ -96,6 +96,78 @@ def new(
     output_or_exit(result, fmt)
 
 
+@app.command("get")
+def get_post(
+    ctx: typer.Context,
+    post_id: str = typer.Argument(..., help="Post ID or URL to fetch"),
+):
+    """Fetch a single post by ID or URL."""
+    from mb.formatters import output
+
+    fmt = get_format(ctx)
+    client = get_client(ctx)
+
+    url = post_id
+    if not post_id.startswith("http"):
+        listing = client.micropub_list()
+        if not listing["ok"]:
+            output(listing, fmt)
+            raise SystemExit(1)
+        items = listing["data"].get("items", [])
+        matched = [i for i in items if str(i.get("url", "")).rstrip("/").endswith(post_id)]
+        if not matched:
+            output({"ok": False, "error": f"Post {post_id} not found", "code": 404}, fmt)
+            raise SystemExit(1)
+        url = matched[0]["url"]
+
+    result = client.micropub_get(url)
+    output_or_exit(result, fmt)
+
+
+@app.command()
+def edit(
+    ctx: typer.Context,
+    post_id: str = typer.Argument(..., help="Post ID or URL to edit"),
+    content: str = typer.Option(None, "--content", help="New content (use '-' for stdin)"),
+    title: str = typer.Option(None, "--title", "-t", help="New title"),
+    category: list[str] = typer.Option(None, "--category", "-c", help="Replace categories"),
+):
+    """Edit an existing post."""
+    from mb.formatters import output
+
+    fmt = get_format(ctx)
+    client = get_client(ctx)
+
+    if content == "-":
+        content = sys.stdin.read().strip()
+
+    if content is None and title is None and category is None:
+        output({"ok": False, "error": "Nothing to update — provide --content, --title, or --category", "code": 400}, fmt)
+        raise SystemExit(1)
+
+    # Resolve post URL from bare ID
+    url = post_id
+    if not post_id.startswith("http"):
+        listing = client.micropub_list()
+        if not listing["ok"]:
+            output(listing, fmt)
+            raise SystemExit(1)
+        items = listing["data"].get("items", [])
+        matched = [i for i in items if str(i.get("url", "")).rstrip("/").endswith(post_id)]
+        if not matched:
+            output({"ok": False, "error": f"Post {post_id} not found", "code": 404}, fmt)
+            raise SystemExit(1)
+        url = matched[0]["url"]
+
+    result = client.micropub_update(
+        url,
+        content=content,
+        title=title,
+        categories=category or None,
+    )
+    output_or_exit(result, fmt)
+
+
 @app.command()
 def reply(
     ctx: typer.Context,

@@ -99,6 +99,18 @@ MICROPUB_CONFIG_RESPONSE = {
 }
 
 
+MICROPUB_SOURCE_RESPONSE = {
+    "type": ["h-entry"],
+    "properties": {
+        "name": ["My Post"],
+        "content": ["Hello world"],
+        "published": ["2026-02-28T12:00:00+00:00"],
+        "url": ["https://testuser.micro.blog/2026/02/28/hello.html"],
+        "category": ["memory", "core-memory"],
+    },
+}
+
+
 def _make_handler(routes: dict):
     """Create an httpx transport handler from a route dict."""
 
@@ -118,12 +130,26 @@ def _make_handler(routes: dict):
         # Micropub GET with different q= params
         if method == "GET" and path == "/micropub":
             q = params.get("q", "source")
+            # Single post source query: ?q=source&url=...
+            if q == "source" and "url" in params:
+                return httpx.Response(200, json=MICROPUB_SOURCE_RESPONSE)
             q_key = ("GET", "/micropub", q)
             if q_key in routes:
                 status, body, headers = routes[q_key]
                 if isinstance(body, (dict, list)):
                     return httpx.Response(status, json=body, headers=headers)
                 return httpx.Response(status, text=body, headers=headers)
+
+        # Micropub POST — check for JSON body (update) vs form data (create/delete)
+        if method == "POST" and path == "/micropub":
+            content_type = request.headers.get("content-type", "")
+            if "application/json" in content_type:
+                body = json.loads(request.content)
+                if body.get("action") == "update":
+                    return httpx.Response(
+                        200, text="",
+                        headers={"Location": body.get("url", "")},
+                    )
 
         key = (method, path)
         if key in routes:
