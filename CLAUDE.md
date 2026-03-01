@@ -278,6 +278,15 @@ Keep the dependency footprint minimal. Do not add libraries without a clear reas
 - Not a moderation tool (report command excluded)
 - Not stateful — no local cache, no SQLite, no post history stored locally
 
+## Known Issues / TODO
+
+- **`mb batch` command** — Spec'd but deferred. Should execute commands from JSONL and return array of results.
+- **`mb post reply` bare ID resolution** — `mb post reply 12345 "content"` constructs `https://micro.blog/12345` which is not a valid post URL. Needs API investigation with a live token to determine the correct way to resolve a numeric post ID to a Micropub-compatible URL.
+- **CLI integration tests** — No tests exercise commands through Typer's `CliRunner`. Current coverage is at the API client and utility function level (57 tests). Adding CLI-layer tests would catch argument parsing bugs and error output formatting.
+- **`get_user` / `get_discover_user` duplication** — Two identical methods in `api.py` both hit `GET /posts/{username}`. Should be deduplicated.
+- **Agent output `@name` vs `@username`** — The `--format agent` output uses `author.name` (display name) with an `@` prefix. The `@` convention implies a handle. Should extract username from `author.url` instead, or drop the `@`.
+- **TOML value escaping** — `config.py` writes values with simple `f'{key} = "{value}"'`. Tokens or usernames containing quotes or backslashes would produce malformed TOML.
+
 ## micro.blog API Reference
 
 - JSON API: https://help.micro.blog/t/json-api/97
