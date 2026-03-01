@@ -1,6 +1,7 @@
 """Load/save ~/.config/mb/config.toml; env var fallback. Supports named profiles."""
 
 import os
+import stat
 import tomllib
 from pathlib import Path
 
@@ -113,3 +114,5 @@ def _write_config(config: dict) -> None:
                 lines.append(f'{key} = "{value}"')
             lines.append("")
     CONFIG_FILE.write_text("\n".join(lines) + "\n")
+    # Restrict permissions — token is sensitive
+    CONFIG_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600

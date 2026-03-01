@@ -1,5 +1,6 @@
 """Typer entrypoint; registers all command groups."""
 
+import os
 import sys
 from typing import Annotated, Optional
 
@@ -59,6 +60,15 @@ def main(
     ctx.ensure_object(dict)
     if human:
         fmt = "human"
+    else:
+        # MB_FORMAT env var as default; explicit --format flag overrides
+        import click
+        fmt_source = ctx.get_parameter_source("fmt")
+        explicitly_set = fmt_source is not None and fmt_source != click.core.ParameterSource.DEFAULT
+        if not explicitly_set:
+            env_fmt = os.environ.get("MB_FORMAT")
+            if env_fmt:
+                fmt = env_fmt
     ctx.obj["format"] = fmt
     ctx.obj["profile"] = profile
     if blog_name:

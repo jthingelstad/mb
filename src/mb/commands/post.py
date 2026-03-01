@@ -5,17 +5,9 @@ from pathlib import Path
 
 import typer
 
+from mb.commands import get_client, get_format, output_or_exit
+
 app = typer.Typer(no_args_is_help=True)
-
-
-def _get_client(ctx: typer.Context = None):
-    from mb.cli import get_client
-    return get_client(ctx)
-
-
-def _get_format(ctx: typer.Context) -> str:
-    from mb.cli import get_format
-    return get_format(ctx)
 
 
 def _read_content(content: str) -> str:
@@ -55,8 +47,8 @@ def new(
     """Create a new post."""
     from mb.formatters import output
 
-    fmt = _get_format(ctx)
-    client = _get_client(ctx)
+    fmt = get_format(ctx)
+    client = get_client(ctx)
 
     # Resolve content
     if file:
@@ -101,9 +93,7 @@ def new(
         photo_url=photo_url,
         categories=category or None,
     )
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(result, fmt)
 
 
 @app.command()
@@ -115,8 +105,8 @@ def reply(
     """Reply to a post."""
     from mb.formatters import output
 
-    fmt = _get_format(ctx)
-    client = _get_client()
+    fmt = get_format(ctx)
+    client = get_client(ctx)
     content = _read_content(content)
 
     if not content:
@@ -129,9 +119,7 @@ def reply(
         reply_to = f"https://micro.blog/{post_id}"
 
     result = client.micropub_create(content=content, reply_to=reply_to)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(result, fmt)
 
 
 @app.command()
@@ -142,8 +130,8 @@ def delete(
     """Delete a post."""
     from mb.formatters import output
 
-    fmt = _get_format(ctx)
-    client = _get_client()
+    fmt = get_format(ctx)
+    client = get_client(ctx)
 
     url = post_id
     if not post_id.startswith("http"):
@@ -160,9 +148,7 @@ def delete(
         url = matched[0]["url"]
 
     result = client.micropub_delete(url)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(result, fmt)
 
 
 @app.command("list")
@@ -171,11 +157,7 @@ def list_posts(
     drafts: bool = typer.Option(False, "--drafts", help="List only drafts"),
 ):
     """List your posts."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
+    fmt = get_format(ctx)
+    client = get_client(ctx)
     result = client.micropub_list(drafts=drafts)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(result, fmt)

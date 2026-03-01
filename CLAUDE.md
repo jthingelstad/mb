@@ -42,6 +42,16 @@ Authentication: `Authorization: Bearer <token>` header on every request.
 
 ## Configuration
 
+### Environment variables
+
+| Variable    | Purpose                                  |
+|-------------|------------------------------------------|
+| `MB_TOKEN`  | Auth token (overrides config file)       |
+| `MB_BLOG`   | Default blog destination                 |
+| `MB_FORMAT` | Default output format: `json`, `human`, or `agent` |
+
+Human users can add `export MB_FORMAT=human` to their shell profile for readable output by default. CLI flags (`--format`, `--human`) always override the env var.
+
 ### Token resolution order
 
 1. `MB_TOKEN` environment variable (overrides everything)

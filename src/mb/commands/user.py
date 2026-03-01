@@ -2,200 +2,78 @@
 
 import typer
 
+from mb.commands import get_client, get_format, output_or_exit
+
 app = typer.Typer(no_args_is_help=True)
 
 
-def _get_client(ctx: typer.Context = None):
-    from mb.cli import get_client
-    return get_client(ctx)
-
-
-def _get_format(ctx: typer.Context) -> str:
-    from mb.cli import get_format
-    return get_format(ctx)
-
-
 @app.command()
-def show(
-    ctx: typer.Context,
-    username: str = typer.Argument(..., help="Username to look up"),
-):
+def show(ctx: typer.Context, username: str = typer.Argument(..., help="Username to look up")):
     """Show user profile."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
-    result = client.get_user(username)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(get_client(ctx).get_user(username), get_format(ctx))
 
 
 @app.command()
-def following(
-    ctx: typer.Context,
-    username: str = typer.Argument(..., help="Username to check following list"),
-):
+def following(ctx: typer.Context, username: str = typer.Argument(..., help="Username to check following list")):
     """List who a user is following."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
-    result = client.get_following(username)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(get_client(ctx).get_following(username), get_format(ctx))
 
 
 @app.command("discover")
-def discover_user(
-    ctx: typer.Context,
-    username: str = typer.Argument(..., help="Username to discover"),
-):
+def discover_user(ctx: typer.Context, username: str = typer.Argument(..., help="Username to discover")):
     """Discover a user's posts."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
-    result = client.get_discover_user(username)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(get_client(ctx).get_discover_user(username), get_format(ctx))
 
 
 @app.command()
-def follow(
-    ctx: typer.Context,
-    username: str = typer.Argument(..., help="Username to follow"),
-):
+def follow(ctx: typer.Context, username: str = typer.Argument(..., help="Username to follow")):
     """Follow a user."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
-    result = client.follow(username)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(get_client(ctx).follow(username), get_format(ctx))
 
 
 @app.command()
-def unfollow(
-    ctx: typer.Context,
-    username: str = typer.Argument(..., help="Username to unfollow"),
-):
+def unfollow(ctx: typer.Context, username: str = typer.Argument(..., help="Username to unfollow")):
     """Unfollow a user."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
-    result = client.unfollow(username)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(get_client(ctx).unfollow(username), get_format(ctx))
 
 
 @app.command("is-following")
-def is_following(
-    ctx: typer.Context,
-    username: str = typer.Argument(..., help="Username to check"),
-):
+def is_following(ctx: typer.Context, username: str = typer.Argument(..., help="Username to check")):
     """Check if you are following a user."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
-    result = client.is_following(username)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(get_client(ctx).is_following(username), get_format(ctx))
 
 
 @app.command()
-def mute(
-    ctx: typer.Context,
-    value: str = typer.Argument(..., help="Username or keyword to mute"),
-):
+def mute(ctx: typer.Context, value: str = typer.Argument(..., help="Username or keyword to mute")):
     """Mute a user or keyword."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
-    result = client.mute(value)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(get_client(ctx).mute(value), get_format(ctx))
 
 
 @app.command()
 def muting(ctx: typer.Context):
     """List muted users/keywords."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
-    result = client.get_muting()
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(get_client(ctx).get_muting(), get_format(ctx))
 
 
 @app.command()
-def unmute(
-    ctx: typer.Context,
-    mute_id: int = typer.Argument(..., help="Mute ID to remove"),
-):
+def unmute(ctx: typer.Context, mute_id: int = typer.Argument(..., help="Mute ID to remove")):
     """Remove a mute."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
-    result = client.unmute(mute_id)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(get_client(ctx).unmute(mute_id), get_format(ctx))
 
 
 @app.command()
-def block(
-    ctx: typer.Context,
-    username: str = typer.Argument(..., help="Username to block"),
-):
+def block(ctx: typer.Context, username: str = typer.Argument(..., help="Username to block")):
     """Block a user."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
-    result = client.block(username)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(get_client(ctx).block(username), get_format(ctx))
 
 
 @app.command()
 def blocking(ctx: typer.Context):
     """List blocked users."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
-    result = client.get_blocking()
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(get_client(ctx).get_blocking(), get_format(ctx))
 
 
 @app.command()
-def unblock(
-    ctx: typer.Context,
-    block_id: int = typer.Argument(..., help="Block ID to remove"),
-):
+def unblock(ctx: typer.Context, block_id: int = typer.Argument(..., help="Block ID to remove")):
     """Remove a block."""
-    from mb.formatters import output
-
-    fmt = _get_format(ctx)
-    client = _get_client()
-    result = client.unblock(block_id)
-    output(result, fmt)
-    if not result["ok"]:
-        raise SystemExit(1)
+    output_or_exit(get_client(ctx).unblock(block_id), get_format(ctx))

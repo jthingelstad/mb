@@ -2,43 +2,29 @@
 
 import typer
 
+from mb.commands import get_client, get_format, add_content_text
+
 app = typer.Typer(no_args_is_help=False, invoke_without_command=True)
 
 
-def _get_client(ctx: typer.Context = None):
-    from mb.cli import get_client
-    return get_client(ctx)
-
-
-def _get_format(ctx: typer.Context) -> str:
-    from mb.cli import get_format
-    return get_format(ctx)
-
-
 def _build_thread(items: list[dict]) -> list[dict]:
-    """Take conversation items and return flat ordered list root→leaf with depth."""
+    """Take conversation items and return flat ordered list root->leaf with depth."""
     if not items:
         return []
 
-    # Build a map of id -> item
     by_id: dict[str, dict] = {}
     children: dict[str, list[str]] = {}
     all_ids = set()
-    parent_ids = set()
 
     for item in items:
         item_id = str(item.get("id", ""))
         by_id[item_id] = item
         all_ids.add(item_id)
-        # micro.blog conversation API returns items with _microblog.reply_to_id
         mb_data = item.get("_microblog", {})
         parent_id = str(mb_data.get("reply_to_id", "")) if mb_data.get("reply_to_id") else None
         if parent_id:
-            parent_ids.add(parent_id)
             children.setdefault(parent_id, []).append(item_id)
 
-    # Find root(s): items that are not replies to anything in this set,
-    # or items whose parent is not in the conversation
     roots = []
     for item in items:
         item_id = str(item.get("id", ""))
@@ -47,7 +33,6 @@ def _build_thread(items: list[dict]) -> list[dict]:
         if not parent_id or parent_id not in all_ids:
             roots.append(item_id)
 
-    # DFS to build ordered list with depth
     result = []
 
     def walk(node_id: str, depth: int):
@@ -70,10 +55,10 @@ def conversation(
     post_id: int = typer.Argument(..., help="Post ID to fetch conversation for"),
 ):
     """Fetch full thread, recursively to root."""
-    from mb.formatters import output, strip_html
+    from mb.formatters import output
 
-    fmt = _get_format(ctx)
-    client = _get_client()
+    fmt = get_format(ctx)
+    client = get_client(ctx)
     result = client.get_conversation(post_id)
 
     if not result["ok"]:
@@ -82,10 +67,7 @@ def conversation(
 
     items = result["data"].get("items", [])
     thread = _build_thread(items)
+    thread_data = {"items": thread}
+    add_content_text(thread_data)
 
-    # Add content_text to each item
-    for item in thread:
-        if "content_html" in item:
-            item["content_text"] = strip_html(item["content_html"]).strip()
-
-    output({"ok": True, "data": {"items": thread}}, fmt)
+    output({"ok": True, "data": thread_data}, fmt)

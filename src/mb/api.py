@@ -46,7 +46,7 @@ class MicroblogClient:
             return {"ok": True, "data": {}}
         try:
             return {"ok": True, "data": resp.json()}
-        except Exception:
+        except (ValueError, KeyError):
             return {"ok": True, "data": {"raw": resp.text}}
 
     # ── auth / user info ────────────────────────────────────
@@ -61,9 +61,9 @@ class MicroblogClient:
     def get_timeline(self, count: int = 20, since_id: int | None = None,
                      before_id: int | None = None) -> dict:
         params: dict = {"count": count}
-        if since_id:
+        if since_id is not None:
             params["since_id"] = since_id
-        if before_id:
+        if before_id is not None:
             params["before_id"] = before_id
         resp = self._client.get("/posts/all", params=params)
         return self._handle_response(resp)
@@ -176,8 +176,9 @@ class MicroblogClient:
             data["photo"] = photo_url
         if categories:
             data["category[]"] = categories
-        if mp_destination:
-            data["mp-destination"] = mp_destination
+        destination = mp_destination or self.default_destination
+        if destination:
+            data["mp-destination"] = destination
         resp = self._client.post("/micropub", data=data)
         return self._handle_micropub_response(resp)
 
