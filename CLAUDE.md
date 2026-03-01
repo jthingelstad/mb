@@ -117,7 +117,7 @@ The `--human` flag switches to `rich`-formatted readable output. The `--format a
 
 ```
 [12345] @username (2h): Post content here.
-[12346] @other (1h): Reply content here.
+[12346] @other (1h) [memory, core-memory]: A categorized post.
 ```
 
 ## Commands Reference
@@ -143,6 +143,10 @@ mb post new --file <path.md>        First # Heading = title
 mb post new --photo <path> --alt "<text>"
 mb post new --category <tag>        Add category (repeatable)
 mb post new --dry-run               Validate without posting
+mb post get <id>                    Fetch a single post by ID or URL
+mb post edit <id> --content "<c>"   Edit post content
+mb post edit <id> --title "<t>"     Edit post title
+mb post edit <id> --category <tag>  Replace post categories
 mb post reply <id> "<content>"
 mb post delete <id>
 mb post list
@@ -213,7 +217,9 @@ mb memory add "<content>" --title "User prefs"      Titled memory
 mb memory recall                                    Recall from "memory" category
 mb memory recall --category core-memory             Recall specific category
 mb memory recall --search "dark mode"               Search within memories
+mb memory recall --search "X" -c preferences        Search within a category
 mb memory recall --count 50                         Control result count
+mb memory forget <id>                               Delete a memory by ID or URL
 mb memory categories                                List all categories in use
 mb memory guide                                     Print agent usage guide
 ```
@@ -282,9 +288,8 @@ Keep the dependency footprint minimal. Do not add libraries without a clear reas
 
 - **`mb batch` command** — Spec'd but deferred. Should execute commands from JSONL and return array of results.
 - **`mb post reply` bare ID resolution** — `mb post reply 12345 "content"` constructs `https://micro.blog/12345` which is not a valid post URL. Needs API investigation with a live token to determine the correct way to resolve a numeric post ID to a Micropub-compatible URL.
-- **CLI integration tests** — No tests exercise commands through Typer's `CliRunner`. Current coverage is at the API client and utility function level (57 tests). Adding CLI-layer tests would catch argument parsing bugs and error output formatting.
+- **CLI integration tests** — No tests exercise commands through Typer's `CliRunner`. Current coverage is at the API client and utility function level (71 tests). Adding CLI-layer tests would catch argument parsing bugs and error output formatting.
 - **`get_user` / `get_discover_user` duplication** — Two identical methods in `api.py` both hit `GET /posts/{username}`. Should be deduplicated.
-- **Agent output `@name` vs `@username`** — The `--format agent` output uses `author.name` (display name) with an `@` prefix. The `@` convention implies a handle. Should extract username from `author.url` instead, or drop the `@`.
 - **TOML value escaping** — `config.py` writes values with simple `f'{key} = "{value}"'`. Tokens or usernames containing quotes or backslashes would produce malformed TOML.
 
 ## micro.blog API Reference

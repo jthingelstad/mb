@@ -40,12 +40,41 @@ def recall(
     username = get_username(ctx)
 
     if search:
-        result = client.search_blog(username, query=search)
+        result = client.search_blog(username, query=search, category=category)
     else:
         result = client.get_blog_posts(username, count=count, category=category)
 
     if result["ok"]:
         add_content_text(result["data"])
+    output_or_exit(result, fmt)
+
+
+@app.command("forget")
+def forget(
+    ctx: typer.Context,
+    post_id: str = typer.Argument(..., help="Post ID or URL of the memory to delete"),
+):
+    """Delete a memory by ID or URL."""
+    from mb.formatters import output
+
+    fmt = get_format(ctx)
+    client = get_client(ctx)
+
+    url = post_id
+    if not post_id.startswith("http"):
+        # Resolve bare ID to URL via Micropub listing
+        listing = client.micropub_list()
+        if not listing["ok"]:
+            output_or_exit(listing, fmt)
+            return
+        items = listing["data"].get("items", [])
+        matched = [i for i in items if str(i.get("url", "")).rstrip("/").endswith(post_id)]
+        if not matched:
+            output({"ok": False, "error": f"Memory {post_id} not found", "code": 404}, fmt)
+            raise SystemExit(1)
+        url = matched[0]["url"]
+
+    result = client.micropub_delete(url)
     output_or_exit(result, fmt)
 
 
@@ -72,6 +101,9 @@ Recall memories by category:
 
 Search across all memories:
   mb memory recall --search "dark mode"
+
+Search within a specific category:
+  mb memory recall --search "dark mode" -c preferences
 
 List your categories:
   mb memory categories
@@ -100,9 +132,13 @@ Persist important things you learned during this session:
   mb memory add "User prefers concise responses without emoji" -c preferences -c core-memory
 
 ### Correcting a Memory
-Post a new memory that supersedes the old one. Include enough context for
-your future self to understand:
-  mb memory add "CORRECTION: User switched from React to Vue in March 2026" -c context -c core-memory
+Delete the outdated memory and store a corrected one:
+  mb memory forget <post-id>
+  mb memory add "User switched from React to Vue in March 2026" -c context -c core-memory
+
+### Deleting a Memory
+Remove a memory you no longer need:
+  mb memory forget <post-id-or-url>
 
 ### Private Memories
 Use --draft to store memories that won't appear on the public blog:

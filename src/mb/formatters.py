@@ -35,6 +35,20 @@ def _relative_time(timestamp: str) -> str:
         return "?"
 
 
+def _extract_username(author: dict) -> str:
+    """Extract username from author URL (e.g. https://micro.blog/username).
+
+    Falls back to author name if URL is missing or unparseable.
+    """
+    url = author.get("url", "")
+    if url:
+        # https://micro.blog/username → username
+        parts = url.rstrip("/").split("/")
+        if parts:
+            return parts[-1]
+    return author.get("name", "?")
+
+
 def output_json(data: dict) -> None:
     """Print a JSON envelope to stdout."""
     json.dump(data, sys.stdout, indent=2)
@@ -104,10 +118,13 @@ def output_agent(data: dict) -> None:
     if items:
         for item in items:
             post_id = item.get("id", "?")
-            author = item.get("author", {}).get("name", "?")
+            author = _extract_username(item.get("author", {}))
             time = _relative_time(item.get("date_published", ""))
             content = strip_html(item.get("content_html", "")).strip()
-            print(f"[{post_id}] @{author} ({time}): {content}")
+            # Include categories if present
+            cats = item.get("_microblog", {}).get("categories", []) if isinstance(item.get("_microblog"), dict) else []
+            cat_str = f" [{', '.join(cats)}]" if cats else ""
+            print(f"[{post_id}] @{author} ({time}){cat_str}: {content}")
         return
 
     # Single result fallback

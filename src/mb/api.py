@@ -149,9 +149,13 @@ class MicroblogClient:
         resp = self._client.get(f"/posts/{username}", params=params)
         return self._handle_response(resp)
 
-    def search_blog(self, username: str, query: str) -> dict:
+    def search_blog(self, username: str, query: str,
+                    category: str | None = None) -> dict:
         """Search posts. Uses /posts/{username}?search=query if supported."""
-        resp = self._client.get(f"/posts/{username}", params={"search": query})
+        params: dict = {"search": query}
+        if category:
+            params["category"] = category
+        resp = self._client.get(f"/posts/{username}", params=params)
         return self._handle_response(resp)
 
     # ── Micropub API (writes) ───────────────────────────────
@@ -182,6 +186,27 @@ class MicroblogClient:
         resp = self._client.post("/micropub", data=data)
         return self._handle_micropub_response(resp)
 
+    def micropub_update(self, url: str, *, content: str | None = None,
+                        title: str | None = None,
+                        categories: list[str] | None = None) -> dict:
+        """Update an existing post via Micropub action=update."""
+        data: dict = {
+            "action": "update",
+            "url": url,
+        }
+        replace = {}
+        if content is not None:
+            replace["content"] = [content]
+        if title is not None:
+            replace["name"] = [title]
+        if categories is not None:
+            replace["category"] = categories
+        if not replace:
+            return {"ok": False, "error": "Nothing to update — provide --content, --title, or --category", "code": 400}
+        data["replace"] = replace
+        resp = self._client.post("/micropub", json=data)
+        return self._handle_micropub_response(resp)
+
     def micropub_delete(self, url: str) -> dict:
         data = {
             "action": "delete",
@@ -189,6 +214,11 @@ class MicroblogClient:
         }
         resp = self._client.post("/micropub", data=data)
         return self._handle_micropub_response(resp)
+
+    def micropub_get(self, url: str) -> dict:
+        """GET /micropub?q=source&url=<url> — fetch a single post's properties."""
+        resp = self._client.get("/micropub", params={"q": "source", "url": url})
+        return self._handle_response(resp)
 
     def micropub_list(self, drafts: bool = False) -> dict:
         params: dict = {"q": "source"}
