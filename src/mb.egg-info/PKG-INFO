@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: mb
+Version: 0.1.0
+Summary: Command-line client for micro.blog, designed for agent use
+Requires-Python: >=3.11
+Requires-Dist: typer>=0.9
+Requires-Dist: httpx>=0.25
+Requires-Dist: rich>=13.0
