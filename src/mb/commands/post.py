@@ -8,9 +8,9 @@ import typer
 app = typer.Typer(no_args_is_help=True)
 
 
-def _get_client():
+def _get_client(ctx: typer.Context = None):
     from mb.cli import get_client
-    return get_client()
+    return get_client(ctx)
 
 
 def _get_format(ctx: typer.Context) -> str:
@@ -49,13 +49,14 @@ def new(
     file: str = typer.Option(None, "--file", help="Read content from markdown file"),
     photo: str = typer.Option(None, "--photo", help="Path to photo to upload"),
     alt: str = typer.Option(None, "--alt", help="Alt text for photo"),
+    category: list[str] = typer.Option(None, "--category", "-c", help="Categories/tags for the post"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without posting"),
 ):
     """Create a new post."""
     from mb.formatters import output
 
     fmt = _get_format(ctx)
-    client = _get_client()
+    client = _get_client(ctx)
 
     # Resolve content
     if file:
@@ -80,6 +81,7 @@ def new(
             "content": content,
             "draft": draft,
             "photo": photo,
+            "categories": category,
         }}, fmt)
         return
 
@@ -97,6 +99,7 @@ def new(
         title=title,
         draft=draft,
         photo_url=photo_url,
+        categories=category or None,
     )
     output(result, fmt)
     if not result["ok"]:

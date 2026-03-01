@@ -5,9 +5,9 @@ import typer
 app = typer.Typer(no_args_is_help=False, invoke_without_command=True)
 
 
-def _get_client():
+def _get_client(ctx: typer.Context = None):
     from mb.cli import get_client
-    return get_client()
+    return get_client(ctx)
 
 
 def _get_format(ctx: typer.Context) -> str:

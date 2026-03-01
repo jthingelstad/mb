@@ -9,6 +9,7 @@ class MicroblogClient:
     def __init__(self, token: str, base_url: str = DEFAULT_BASE_URL):
         self.token = token
         self.base_url = base_url.rstrip("/")
+        self.default_destination: str | None = None
         self._client = httpx.Client(
             base_url=self.base_url,
             headers={"Authorization": f"Bearer {token}"},
@@ -139,11 +140,27 @@ class MicroblogClient:
         resp = self._client.get("/posts/check", params={"since_id": since_id})
         return self._handle_response(resp)
 
+    def get_blog_posts(self, username: str, count: int = 20,
+                       category: str | None = None) -> dict:
+        """Get a user's own blog posts, optionally filtered by category."""
+        params: dict = {"count": count}
+        if category:
+            params["category"] = category
+        resp = self._client.get(f"/posts/{username}", params=params)
+        return self._handle_response(resp)
+
+    def search_blog(self, username: str, query: str) -> dict:
+        """Search posts. Uses /posts/{username}?search=query if supported."""
+        resp = self._client.get(f"/posts/{username}", params={"search": query})
+        return self._handle_response(resp)
+
     # ── Micropub API (writes) ───────────────────────────────
 
     def micropub_create(self, *, content: str, title: str | None = None,
                         draft: bool = False, reply_to: str | None = None,
-                        photo_url: str | None = None) -> dict:
+                        photo_url: str | None = None,
+                        categories: list[str] | None = None,
+                        mp_destination: str | None = None) -> dict:
         """Create a new post via Micropub."""
         data: dict = {
             "h": "entry",
@@ -157,6 +174,10 @@ class MicroblogClient:
             data["in-reply-to"] = reply_to
         if photo_url:
             data["photo"] = photo_url
+        if categories:
+            data["category[]"] = categories
+        if mp_destination:
+            data["mp-destination"] = mp_destination
         resp = self._client.post("/micropub", data=data)
         return self._handle_micropub_response(resp)
 
@@ -173,6 +194,16 @@ class MicroblogClient:
         if drafts:
             params["post-status"] = "draft"
         resp = self._client.get("/micropub", params=params)
+        return self._handle_response(resp)
+
+    def micropub_get_categories(self) -> dict:
+        """GET /micropub?q=category — list all categories."""
+        resp = self._client.get("/micropub", params={"q": "category"})
+        return self._handle_response(resp)
+
+    def micropub_get_config(self) -> dict:
+        """GET /micropub?q=config — get Micropub config including blog destinations."""
+        resp = self._client.get("/micropub", params={"q": "config"})
         return self._handle_response(resp)
 
     def micropub_upload_photo(self, filepath: str, alt: str | None = None) -> dict:

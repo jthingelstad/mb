@@ -87,6 +87,17 @@ CHECK_RESPONSE = {
     "check_seconds": 30,
 }
 
+CATEGORIES_RESPONSE = {
+    "categories": ["memory", "core-memory", "journal", "preferences"],
+}
+
+MICROPUB_CONFIG_RESPONSE = {
+    "destination": [
+        {"uid": "https://testuser.micro.blog/", "name": "testuser"},
+        {"uid": "https://testblog.micro.blog/", "name": "testblog"},
+    ],
+}
+
 
 def _make_handler(routes: dict):
     """Create an httpx transport handler from a route dict."""
@@ -94,6 +105,7 @@ def _make_handler(routes: dict):
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
         method = request.method
+        params = dict(request.url.params)
 
         # Rate limit test route
         if path == "/rate-limited":
@@ -102,6 +114,16 @@ def _make_handler(routes: dict):
         # Auth failure test route
         if request.headers.get("Authorization") == "Bearer bad-token":
             return httpx.Response(401, json={"error": "Unauthorized"})
+
+        # Micropub GET with different q= params
+        if method == "GET" and path == "/micropub":
+            q = params.get("q", "source")
+            q_key = ("GET", "/micropub", q)
+            if q_key in routes:
+                status, body, headers = routes[q_key]
+                if isinstance(body, (dict, list)):
+                    return httpx.Response(status, json=body, headers=headers)
+                return httpx.Response(status, text=body, headers=headers)
 
         key = (method, path)
         if key in routes:
@@ -150,7 +172,9 @@ def mock_client():
             "",
             {"Location": "https://testuser.micro.blog/2026/02/28/newpost.html"},
         ),
-        ("GET", "/micropub"): (200, MICROPUB_LIST_RESPONSE, {}),
+        ("GET", "/micropub", "source"): (200, MICROPUB_LIST_RESPONSE, {}),
+        ("GET", "/micropub", "category"): (200, CATEGORIES_RESPONSE, {}),
+        ("GET", "/micropub", "config"): (200, MICROPUB_CONFIG_RESPONSE, {}),
     }
     transport = httpx.MockTransport(_make_handler(routes))
     client = MicroblogClient(token="test-token", base_url="https://micro.blog")

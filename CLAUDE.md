@@ -17,13 +17,15 @@ This file provides context and guidance for Claude Code working on the `mb` proj
 ```
 mb/
 ├── cli.py           # Typer entrypoint; registers all command groups
-├── config.py        # Load/save ~/.config/mb/config.toml; env var fallback
+├── config.py        # Load/save ~/.config/mb/config.toml; multi-profile support
 ├── api.py           # HTTP client (httpx); accepts base_url override for testing
 ├── commands/
 │   ├── post.py      # Publishing commands
 │   ├── timeline.py  # Reading/discovery commands
 │   ├── conversation.py  # Thread fetching
-│   └── user.py      # Social graph commands
+│   ├── user.py      # Social graph commands
+│   ├── blog.py      # Read own blog posts, categories, search
+│   └── memory.py    # Agent long-term memory (posts + categories)
 └── formatters.py    # Output modes: json | human | agent
 ```
 
@@ -40,16 +42,41 @@ Authentication: `Authorization: Bearer <token>` header on every request.
 
 ## Configuration
 
-Token resolution order:
+### Token resolution order
 
-1. `MB_TOKEN` environment variable
-1. `~/.config/mb/config.toml` → `token` key
+1. `MB_TOKEN` environment variable (overrides everything)
+1. `~/.config/mb/config.toml` → profile-specific `token` key
 
-Config file format:
+### Blog destination resolution order
+
+1. `--blog` CLI flag
+2. `MB_BLOG` environment variable
+3. `~/.config/mb/config.toml` → profile-specific `blog` key
+4. Account default (first blog)
+
+### Config file format (multi-profile)
 
 ```toml
+[default]
 token = "your-app-token"
 username = "yourusername"   # cached from whoami at auth time
+blog = "https://yourusername.micro.blog/"
+
+[test]
+token = "your-app-token"   # can be same token, different blog
+username = "yourusername"
+blog = "https://testblog.micro.blog/"
+```
+
+Legacy flat format (no sections) is auto-detected and treated as the `default` profile. Saving a new named profile auto-migrates to the sectioned format.
+
+### Global CLI flags
+
+```
+--profile, -p    Config profile to use (default: "default")
+--blog, -b       Blog destination override (name or URL)
+--format, -f     Output format: json | human | agent
+--human          Shortcut for --format human
 ```
 
 `api.py` must accept a `base_url` parameter (default `https://micro.blog`) to support test mocking without hitting live API.
@@ -85,11 +112,15 @@ The `--human` flag switches to `rich`-formatted readable output. The `--format a
 
 ## Commands Reference
 
-### Auth
+### Auth & Profiles
 
 ```
-mb auth <token>          Store token and verify it works
-mb whoami                Return username + blog URL as JSON
+mb auth <token>                      Store token and verify it works
+mb auth <token> --blog <url>         Store token with a default blog destination
+mb auth <token> --profile test       Store under a named profile
+mb whoami                            Return username + blog URL as JSON
+mb profiles                          List all configured profiles
+mb blogs                             List available blogs for the current token
 ```
 
 ### Post
@@ -100,6 +131,7 @@ mb post new --title "<t>" --content "<c>"
 mb post new --draft
 mb post new --file <path.md>        First # Heading = title
 mb post new --photo <path> --alt "<text>"
+mb post new --category <tag>        Add category (repeatable)
 mb post new --dry-run               Validate without posting
 mb post reply <id> "<content>"
 mb post delete <id>
@@ -148,11 +180,45 @@ mb user blocking
 mb user unblock <id>
 ```
 
+### Blog (read own posts)
+
+```
+mb blog posts                        List your own blog posts
+mb blog posts --count N
+mb blog posts --category <tag>       Filter by category
+mb blog categories                   List all categories/tags on your blog
+mb blog search "<query>"             Search your blog posts
+```
+
+### Memory (agent long-term memory)
+
+The memory system uses blog posts with categories as the storage primitive. The agent decides which categories constitute "memory" — there are no hardcoded memory types.
+
+```
+mb memory add "<content>"                         Default category: memory
+mb memory add "<content>" --category core-memory
+mb memory add "<content>" -c preferences -c memory  Multiple categories
+mb memory add "<content>" --draft                   Private memory (draft post)
+mb memory add "<content>" --title "User prefs"      Titled memory
+mb memory recall                                    Recall from "memory" category
+mb memory recall --category core-memory             Recall specific category
+mb memory recall --search "dark mode"               Search within memories
+mb memory recall --count 50                         Control result count
+mb memory categories                                List all categories in use
+```
+
+The agent is free to create any categories it needs. Example category taxonomy:
+- `memory` — general memories
+- `core-memory` — important, persistent facts
+- `preferences` — user preferences
+- `journal` — session logs or reflections
+- `context` — conversation context to remember
+
 ### Utilities
 
 ```
 mb poll --since <id> --interval 30   Emit JSON events to stdout; ctrl-c to stop
-mb batch <file.jsonl>                Execute commands from JSONL; return array of results
+mb batch <file.jsonl>                Execute commands from JSONL; return array of results (deferred)
 ```
 
 ## Key Behaviors
@@ -187,7 +253,6 @@ Keep the dependency footprint minimal. Do not add libraries without a clear reas
 ## What This Is NOT
 
 - Not a TUI or interactive client
-- Not multi-blog aware (single account, single blog)
 - Not a bookmark manager (bookmarks excluded by design)
 - Not a moderation tool (report command excluded)
 - Not stateful — no local cache, no SQLite, no post history stored locally
