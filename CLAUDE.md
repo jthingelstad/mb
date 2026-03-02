@@ -245,7 +245,6 @@ The agent is free to create any categories it needs. Example category taxonomy:
 
 ```
 mb poll --since <id> --interval 30   Emit JSON events to stdout; ctrl-c to stop
-mb batch <file.jsonl>                Execute commands from JSONL; return array of results (deferred)
 ```
 
 ## Key Behaviors
@@ -284,10 +283,6 @@ Keep the dependency footprint minimal. Do not add libraries without a clear reas
 - Not a bookmark manager (bookmarks excluded by design)
 - Not a moderation tool (report command excluded)
 - Not stateful — no local cache, no SQLite, no post history stored locally
-
-## Known Issues / TODO
-
-- **`mb batch` command** — Spec'd but deferred. Should execute commands from JSONL and return array of results.
 
 ## micro.blog API Reference
 
