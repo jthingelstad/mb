@@ -1,5 +1,6 @@
 """Load/save ~/.config/mb/config.toml; env var fallback. Supports named profiles."""
 
+import json
 import os
 import stat
 import tomllib
@@ -104,14 +105,14 @@ def _write_config(config: dict) -> None:
     # Check if flat format (legacy — single profile with no sections)
     if "token" in config and not any(isinstance(v, dict) for v in config.values()):
         for key, value in config.items():
-            lines.append(f'{key} = "{value}"')
+            lines.append(f'{key} = {json.dumps(value)}')
     else:
         for section_name, section in config.items():
             if not isinstance(section, dict):
                 continue
             lines.append(f"[{section_name}]")
             for key, value in section.items():
-                lines.append(f'{key} = "{value}"')
+                lines.append(f'{key} = {json.dumps(value)}')
             lines.append("")
     CONFIG_FILE.write_text("\n".join(lines) + "\n")
     # Restrict permissions — token is sensitive

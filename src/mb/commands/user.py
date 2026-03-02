@@ -22,7 +22,7 @@ def following(ctx: typer.Context, username: str = typer.Argument(..., help="User
 @app.command("discover")
 def discover_user(ctx: typer.Context, username: str = typer.Argument(..., help="Username to discover")):
     """Discover a user's posts."""
-    output_or_exit(get_client(ctx).get_discover_user(username), get_format(ctx))
+    output_or_exit(get_client(ctx).get_user(username), get_format(ctx))
 
 
 @app.command()

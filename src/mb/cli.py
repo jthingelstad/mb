@@ -5,13 +5,39 @@ import sys
 from typing import Annotated, Optional
 
 import typer
+import typer.core
 
 from mb import config
 from mb.api import MicroblogClient
 from mb.commands import blog, conversation, memory, post, timeline, user
 from mb.formatters import output
 
-app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+class _FlexibleGroup(typer.core.TyperGroup):
+    """Group that allows global options (-p, -f, --human, -b) after the subcommand."""
+
+    _VALUED_OPTS = {"-p", "--profile", "-f", "--format", "-b", "--blog"}
+    _FLAG_OPTS = {"--human"}
+
+    def parse_args(self, ctx, args):
+        args = list(args)
+        front = []
+        rest = []
+        i = 0
+        while i < len(args):
+            if args[i] in self._VALUED_OPTS and i + 1 < len(args):
+                front.extend([args[i], args[i + 1]])
+                i += 2
+            elif args[i] in self._FLAG_OPTS:
+                front.append(args[i])
+                i += 1
+            else:
+                rest.append(args[i])
+                i += 1
+        return super().parse_args(ctx, front + rest)
+
+
+app = typer.Typer(cls=_FlexibleGroup, add_completion=False, no_args_is_help=True)
 app.add_typer(post.app, name="post", help="Publishing commands")
 app.add_typer(timeline.app, name="timeline", help="Reading/discovery commands")
 app.add_typer(user.app, name="user", help="Social graph commands")

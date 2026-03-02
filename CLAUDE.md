@@ -276,6 +276,7 @@ Keep the dependency footprint minimal. Do not add libraries without a clear reas
 - `api.py` accepts `base_url` override — point at a local mock server or `httpx.MockTransport` in tests
 - No live API calls in the test suite
 - Test fixtures should cover: successful post, draft post, rate limit response, auth failure, multi-item timeline paging
+- CLI integration tests use Typer's `CliRunner` to exercise commands end-to-end (argument parsing, output formatting, global flag ordering)
 
 ## What This Is NOT
 
@@ -287,11 +288,6 @@ Keep the dependency footprint minimal. Do not add libraries without a clear reas
 ## Known Issues / TODO
 
 - **`mb batch` command** — Spec'd but deferred. Should execute commands from JSONL and return array of results.
-- **`mb post reply` bare ID resolution** — `mb post reply 12345 "content"` constructs `https://micro.blog/12345` which is not a valid post URL. Needs API investigation with a live token to determine the correct way to resolve a numeric post ID to a Micropub-compatible URL.
-- **CLI integration tests** — No tests exercise commands through Typer's `CliRunner`. Current coverage is at the API client and utility function level (81 tests). Adding CLI-layer tests would catch argument parsing bugs and error output formatting.
-- **`get_user` / `get_discover_user` duplication** — Two identical methods in `api.py` both hit `GET /posts/{username}`. Should be deduplicated.
-- **TOML value escaping** — `config.py` writes values with simple `f'{key} = "{value}"'`. Tokens or usernames containing quotes or backslashes would produce malformed TOML.
-- **Global flags must precede subcommand** — Typer requires `mb -p test whoami` not `mb whoami -p test`. This is Typer's default behavior; could be improved with `context_settings` or by adding profile/format options to each subcommand.
 
 ## micro.blog API Reference
 
