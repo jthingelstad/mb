@@ -94,6 +94,10 @@ mb post new --draft                          Save as draft
 mb post new --file post.md                   Post from file (first # heading = title)
 mb post new --photo image.jpg --alt "desc"   Post with photo
 mb post new --category tag                   Add category (repeatable)
+mb post get <id>                             Fetch a post by ID or URL
+mb post edit <id> --content "New text"       Edit post content
+mb post edit <id> --title "New Title"        Edit post title
+mb post edit <id> --category tag             Replace post categories
 mb post reply <id> "Reply text"
 mb post delete <id>
 mb post list
@@ -151,6 +155,7 @@ An agent memory system that uses blog posts with categories as storage:
 mb memory add "Important fact" --category core-memory
 mb memory recall --category core-memory
 mb memory recall --search "keyword"
+mb memory forget <id>        Delete a memory by ID or URL
 mb memory categories
 mb memory guide              Print the full agent usage guide
 ```
