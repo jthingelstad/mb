@@ -309,7 +309,13 @@ class MicroblogClient:
 
     def micropub_upload_photo(self, filepath: str, alt: str | None = None) -> dict:
         """Upload a photo to the media endpoint, return its URL."""
-        with open(filepath, "rb") as f:
+        try:
+            f = open(filepath, "rb")
+        except FileNotFoundError:
+            return {"ok": False, "error": f"File not found: {filepath}", "code": 400}
+        except OSError as e:
+            return {"ok": False, "error": f"Cannot read file: {filepath} ({e})", "code": 400}
+        with f:
             files = {"file": (filepath.split("/")[-1], f)}
             data = {}
             if alt:

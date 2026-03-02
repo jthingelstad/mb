@@ -2,8 +2,6 @@
 
 import os
 import sys
-from typing import Annotated, Optional
-
 import typer
 import typer.core
 

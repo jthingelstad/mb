@@ -19,7 +19,12 @@ def _read_content(content: str) -> str:
 
 def _parse_file(path: str) -> tuple[str | None, str]:
     """Parse a markdown file. First # heading becomes title, rest is content."""
-    text = Path(path).read_text()
+    try:
+        text = Path(path).read_text()
+    except FileNotFoundError:
+        raise FileNotFoundError(f"File not found: {path}")
+    except OSError as e:
+        raise OSError(f"Cannot read file: {path} ({e})")
     lines = text.split("\n")
     title = None
     content_lines = []
@@ -52,7 +57,11 @@ def new(
 
     # Resolve content
     if file:
-        file_title, file_content = _parse_file(file)
+        try:
+            file_title, file_content = _parse_file(file)
+        except (FileNotFoundError, OSError) as e:
+            output({"ok": False, "error": str(e), "code": 400}, fmt)
+            raise SystemExit(1)
         if not title:
             title = file_title
         content = file_content
