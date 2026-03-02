@@ -40,7 +40,7 @@ class MicroblogClient:
         if resp.status_code == 401:
             return {"ok": False, "error": "Unauthorized — invalid token", "code": 401}
         if resp.status_code >= 400:
-            text = resp.text[:200]
+            text = resp.text[:200].strip() or f"HTTP {resp.status_code} error"
             return {"ok": False, "error": text, "code": resp.status_code}
         # Some endpoints return empty body on success (e.g. delete)
         if not resp.text.strip():
@@ -55,7 +55,11 @@ class MicroblogClient:
     def verify_token(self) -> dict:
         """POST /account/verify — returns user info if token is valid."""
         resp = self._client.post("/account/verify", data={"token": self.token})
-        return self._handle_response(resp)
+        result = self._handle_response(resp)
+        # API returns 200 with {"error": "..."} for invalid tokens
+        if result["ok"] and isinstance(result.get("data"), dict) and "error" in result["data"]:
+            return {"ok": False, "error": result["data"]["error"], "code": 401}
+        return result
 
     # ── JSON API (reads) ────────────────────────────────────
 
@@ -328,7 +332,7 @@ class MicroblogClient:
         if resp.status_code == 401:
             return {"ok": False, "error": "Unauthorized — invalid token", "code": 401}
         if resp.status_code >= 400:
-            text = resp.text[:200]
+            text = resp.text[:200].strip() or f"HTTP {resp.status_code} error"
             return {"ok": False, "error": text, "code": resp.status_code}
         location = resp.headers.get("Location", "")
         # Extract post ID from URL if possible

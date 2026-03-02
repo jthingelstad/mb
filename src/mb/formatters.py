@@ -67,6 +67,18 @@ def output_human(data: dict) -> None:
 
     payload = data.get("data", {})
 
+    # User lists (e.g. following, muting, blocking) — check before dict operations
+    if isinstance(payload, list):
+        if not payload:
+            console.print("[dim]No items.[/dim]")
+            return
+        for entry in payload:
+            if isinstance(entry, dict) and "username" in entry:
+                console.print(f"  @{entry['username']}")
+            else:
+                console.print(f"  {entry}")
+        return
+
     # Single post
     if "id" in payload and "url" in payload and "content_html" not in payload:
         console.print(f"[green]OK[/green] id={payload['id']} url={payload['url']}")
@@ -90,20 +102,12 @@ def output_human(data: dict) -> None:
         table.add_column("Content", max_width=60)
         table.add_column("Date", style="dim")
         for item in items:
-            author = item.get("author", {}).get("name", "?")
+            author_obj = item.get("author", {})
+            author = author_obj.get("name") or _extract_username(author_obj)
             content = strip_html(item.get("content_html", ""))[:60]
             date = item.get("date_published", "")[:10]
             table.add_row(str(item.get("id", "")), author, content, date)
         console.print(table)
-        return
-
-    # User lists (e.g. following, muting, blocking)
-    if isinstance(payload, list):
-        for entry in payload:
-            if isinstance(entry, dict) and "username" in entry:
-                console.print(f"  @{entry['username']}")
-            else:
-                console.print(f"  {entry}")
         return
 
     # Fallback
@@ -117,6 +121,16 @@ def output_agent(data: dict) -> None:
         return
 
     payload = data.get("data", {})
+
+    # User lists (e.g. following, muting, blocking) — check before dict operations
+    if isinstance(payload, list):
+        for entry in payload:
+            if isinstance(entry, dict) and "username" in entry:
+                print(f"@{entry['username']}")
+            else:
+                print(f"  {entry}")
+        return
+
     items = payload.get("items", [])
     if items:
         for item in items:

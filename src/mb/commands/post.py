@@ -5,7 +5,7 @@ from pathlib import Path
 
 import typer
 
-from mb.commands import get_client, get_format, output_or_exit
+from mb.commands import get_client, get_format, get_username, output_or_exit, resolve_post_url, add_content_text
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -107,19 +107,7 @@ def get_post(
     fmt = get_format(ctx)
     client = get_client(ctx)
 
-    url = post_id
-    if not post_id.startswith("http"):
-        listing = client.micropub_list()
-        if not listing["ok"]:
-            output(listing, fmt)
-            raise SystemExit(1)
-        items = listing["data"].get("items", [])
-        matched = [i for i in items if str(i.get("url", "")).rstrip("/").endswith(post_id)]
-        if not matched:
-            output({"ok": False, "error": f"Post {post_id} not found", "code": 404}, fmt)
-            raise SystemExit(1)
-        url = matched[0]["url"]
-
+    url = resolve_post_url(client, post_id, fmt)
     result = client.micropub_get(url)
     output_or_exit(result, fmt)
 
@@ -145,20 +133,7 @@ def edit(
         output({"ok": False, "error": "Nothing to update — provide --content, --title, or --category", "code": 400}, fmt)
         raise SystemExit(1)
 
-    # Resolve post URL from bare ID
-    url = post_id
-    if not post_id.startswith("http"):
-        listing = client.micropub_list()
-        if not listing["ok"]:
-            output(listing, fmt)
-            raise SystemExit(1)
-        items = listing["data"].get("items", [])
-        matched = [i for i in items if str(i.get("url", "")).rstrip("/").endswith(post_id)]
-        if not matched:
-            output({"ok": False, "error": f"Post {post_id} not found", "code": 404}, fmt)
-            raise SystemExit(1)
-        url = matched[0]["url"]
-
+    url = resolve_post_url(client, post_id, fmt)
     result = client.micropub_update(
         url,
         content=content,
@@ -205,20 +180,7 @@ def delete(
     fmt = get_format(ctx)
     client = get_client(ctx)
 
-    url = post_id
-    if not post_id.startswith("http"):
-        # Need to resolve the post URL — list posts and find it
-        listing = client.micropub_list()
-        if not listing["ok"]:
-            output(listing, fmt)
-            raise SystemExit(1)
-        items = listing["data"].get("items", [])
-        matched = [i for i in items if str(i.get("url", "")).rstrip("/").endswith(post_id)]
-        if not matched:
-            output({"ok": False, "error": f"Post {post_id} not found", "code": 404}, fmt)
-            raise SystemExit(1)
-        url = matched[0]["url"]
-
+    url = resolve_post_url(client, post_id, fmt)
     result = client.micropub_delete(url)
     output_or_exit(result, fmt)
 
@@ -232,4 +194,12 @@ def list_posts(
     fmt = get_format(ctx)
     client = get_client(ctx)
     result = client.micropub_list(drafts=drafts)
+    if result["ok"]:
+        # Normalize Micropub h-entry items to JSON Feed format for formatters
+        items = result["data"].get("items", [])
+        if items and "properties" in items[0]:
+            username = get_username(ctx)
+            normalized = client._normalize_micropub_items(items, owner=username)
+            result["data"]["items"] = normalized
+        add_content_text(result["data"])
     output_or_exit(result, fmt)

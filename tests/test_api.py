@@ -1,5 +1,8 @@
 """Tests for the API client layer."""
 
+import httpx
+
+from mb.api import MicroblogClient
 from tests.conftest import TIMELINE_ITEMS, VERIFY_RESPONSE, CONVERSATION_RESPONSE
 
 
@@ -13,6 +16,19 @@ class TestVerifyToken:
         result = auth_failure_client.verify_token()
         assert result["ok"] is False
         assert result["code"] == 401
+
+    def test_invalid_token_api_error(self):
+        """API returns 200 with {"error": "..."} for invalid tokens."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"error": "App token was not valid."})
+
+        transport = httpx.MockTransport(handler)
+        client = MicroblogClient(token="bad", base_url="https://micro.blog")
+        client._client = httpx.Client(transport=transport, base_url="https://micro.blog")
+        result = client.verify_token()
+        assert result["ok"] is False
+        assert result["code"] == 401
+        assert "not valid" in result["error"]
 
 
 class TestTimeline:
@@ -135,3 +151,29 @@ class TestRateLimiting:
         result = rate_limited_client.micropub_create(content="test")
         assert result["ok"] is False
         assert result["error"] == "rate_limited"
+
+
+class TestErrorMessages:
+    def test_empty_error_body_has_fallback(self):
+        """HTTP errors with empty bodies should include a fallback message."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(404, text="")
+
+        transport = httpx.MockTransport(handler)
+        client = MicroblogClient(token="test", base_url="https://micro.blog")
+        client._client = httpx.Client(transport=transport, base_url="https://micro.blog")
+        result = client._handle_response(httpx.Response(404, text=""))
+        assert result["ok"] is False
+        assert result["error"] == "HTTP 404 error"
+
+    def test_empty_micropub_error_has_fallback(self):
+        """Micropub errors with empty bodies should include a fallback message."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(404, text="")
+
+        transport = httpx.MockTransport(handler)
+        client = MicroblogClient(token="test", base_url="https://micro.blog")
+        client._client = httpx.Client(transport=transport, base_url="https://micro.blog")
+        result = client._handle_micropub_response(httpx.Response(404, text=""))
+        assert result["ok"] is False
+        assert result["error"] == "HTTP 404 error"

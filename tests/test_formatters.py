@@ -2,7 +2,7 @@
 
 import json
 
-from mb.formatters import strip_html, output_json, output_agent
+from mb.formatters import strip_html, output_json, output_agent, output_human
 
 
 class TestStripHtml:
@@ -65,3 +65,32 @@ class TestOutputAgent:
         output_agent({"ok": True, "data": {"id": "abc", "url": "https://example.com"}})
         captured = capsys.readouterr()
         assert "OK id=abc" in captured.out
+
+    def test_list_payload(self, capsys):
+        """Agent format handles list payloads (e.g. following, muting)."""
+        data = {"ok": True, "data": [
+            {"username": "alice"}, {"username": "bob"},
+        ]}
+        output_agent(data)
+        captured = capsys.readouterr()
+        assert "@alice" in captured.out
+        assert "@bob" in captured.out
+
+
+class TestOutputHuman:
+    def test_list_payload(self, capsys):
+        """Human format handles list payloads without crashing."""
+        data = {"ok": True, "data": [
+            {"username": "alice"}, {"username": "bob"},
+        ]}
+        output_human(data)
+        captured = capsys.readouterr()
+        assert "@alice" in captured.out
+        assert "@bob" in captured.out
+
+    def test_empty_list_payload(self, capsys):
+        """Human format handles empty list payloads gracefully."""
+        data = {"ok": True, "data": []}
+        output_human(data)
+        captured = capsys.readouterr()
+        assert "No items" in captured.out

@@ -52,3 +52,39 @@ def add_content_text(data: dict) -> None:
     for item in data.get("items", []):
         if "content_html" in item:
             item["content_text"] = strip_html(item["content_html"]).strip()
+
+
+def _micropub_item_url(item: dict) -> str:
+    """Extract URL from a Micropub h-entry item or a flat JSON Feed item."""
+    # Micropub h-entry format: properties.url[0]
+    props = item.get("properties", {})
+    url_list = props.get("url", [])
+    if url_list:
+        return str(url_list[0])
+    # Flat format
+    return str(item.get("url", ""))
+
+
+def resolve_post_url(client, post_id: str, fmt: str):
+    """Resolve a bare post ID to a full URL via Micropub listing.
+
+    Returns the URL string, or calls output + SystemExit(1) on failure.
+    """
+    from mb.formatters import output
+
+    if post_id.startswith("http"):
+        return post_id
+
+    listing = client.micropub_list()
+    if not listing["ok"]:
+        output(listing, fmt)
+        raise SystemExit(1)
+    items = listing["data"].get("items", [])
+    matched = [
+        i for i in items
+        if _micropub_item_url(i).rstrip("/").endswith(post_id)
+    ]
+    if not matched:
+        output({"ok": False, "error": f"Post {post_id} not found", "code": 404}, fmt)
+        raise SystemExit(1)
+    return _micropub_item_url(matched[0])

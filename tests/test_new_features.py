@@ -3,6 +3,7 @@ search+category fix, agent output with categories, and @username extraction."""
 
 import json
 
+from mb.commands import _micropub_item_url
 from mb.formatters import _extract_username, output_agent
 
 
@@ -54,6 +55,28 @@ class TestSearchWithCategory:
     def test_search_blog_without_category(self, mock_client):
         result = mock_client.search_blog("testuser", query="hello")
         assert result["ok"] is True
+
+
+class TestMicropubItemUrl:
+    def test_from_properties(self):
+        """Extract URL from Micropub h-entry format."""
+        item = {"type": "h-entry", "properties": {
+            "url": ["https://blog.example/post.html"],
+            "content": ["Hello"],
+        }}
+        assert _micropub_item_url(item) == "https://blog.example/post.html"
+
+    def test_from_flat(self):
+        """Extract URL from flat JSON Feed format."""
+        item = {"id": "123", "url": "https://blog.example/post.html"}
+        assert _micropub_item_url(item) == "https://blog.example/post.html"
+
+    def test_empty_item(self):
+        assert _micropub_item_url({}) == ""
+
+    def test_properties_empty_url_list(self):
+        item = {"properties": {"url": [], "content": ["Hello"]}}
+        assert _micropub_item_url(item) == ""
 
 
 class TestExtractUsername:

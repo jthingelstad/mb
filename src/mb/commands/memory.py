@@ -2,7 +2,7 @@
 
 import typer
 
-from mb.commands import get_client, get_format, get_username, output_or_exit, add_content_text
+from mb.commands import get_client, get_format, get_username, output_or_exit, add_content_text, resolve_post_url
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -55,25 +55,9 @@ def forget(
     post_id: str = typer.Argument(..., help="Post ID or URL of the memory to delete"),
 ):
     """Delete a memory by ID or URL."""
-    from mb.formatters import output
-
     fmt = get_format(ctx)
     client = get_client(ctx)
-
-    url = post_id
-    if not post_id.startswith("http"):
-        # Resolve bare ID to URL via Micropub listing
-        listing = client.micropub_list()
-        if not listing["ok"]:
-            output_or_exit(listing, fmt)
-            return
-        items = listing["data"].get("items", [])
-        matched = [i for i in items if str(i.get("url", "")).rstrip("/").endswith(post_id)]
-        if not matched:
-            output({"ok": False, "error": f"Memory {post_id} not found", "code": 404}, fmt)
-            raise SystemExit(1)
-        url = matched[0]["url"]
-
+    url = resolve_post_url(client, post_id, fmt)
     result = client.micropub_delete(url)
     output_or_exit(result, fmt)
 
