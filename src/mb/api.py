@@ -10,6 +10,7 @@ class MicroblogClient:
         self.token = token
         self.base_url = base_url.rstrip("/")
         self.default_destination: str | None = None
+        self.username: str | None = None
         self._client = httpx.Client(
             base_url=self.base_url,
             headers={"Authorization": f"Bearer {token}"},
@@ -52,8 +53,8 @@ class MicroblogClient:
     # ── auth / user info ────────────────────────────────────
 
     def verify_token(self) -> dict:
-        """GET /posts/account/verify — returns user info if token is valid."""
-        resp = self._client.get("/posts/account/verify")
+        """POST /account/verify — returns user info if token is valid."""
+        resp = self._client.post("/account/verify", data={"token": self.token})
         return self._handle_response(resp)
 
     # ── JSON API (reads) ────────────────────────────────────
@@ -100,7 +101,7 @@ class MicroblogClient:
         return self._handle_response(resp)
 
     def is_following(self, username: str) -> dict:
-        resp = self._client.get(f"/users/is-following/{username}")
+        resp = self._client.get("/users/is_following", params={"username": username})
         return self._handle_response(resp)
 
     def follow(self, username: str) -> dict:
@@ -142,7 +143,16 @@ class MicroblogClient:
 
     def get_blog_posts(self, username: str, count: int = 20,
                        category: str | None = None) -> dict:
-        """Get a user's own blog posts, optionally filtered by category."""
+        """Get blog posts. Uses Micropub source for non-default destinations."""
+        if self.default_destination:
+            result = self.micropub_list()
+            if not result["ok"]:
+                return result
+            items = result["data"].get("items", [])
+            normalized = self._normalize_micropub_items(items, owner=username)
+            if category:
+                normalized = [i for i in normalized if category in i.get("tags", [])]
+            return {"ok": True, "data": {"items": normalized[:count]}}
         params: dict = {"count": count}
         if category:
             params["category"] = category
@@ -151,12 +161,60 @@ class MicroblogClient:
 
     def search_blog(self, username: str, query: str,
                     category: str | None = None) -> dict:
-        """Search posts. Uses /posts/{username}?search=query if supported."""
+        """Search posts. Uses client-side search for non-default destinations."""
+        if self.default_destination:
+            result = self.micropub_list()
+            if not result["ok"]:
+                return result
+            items = result["data"].get("items", [])
+            normalized = self._normalize_micropub_items(items, owner=username)
+            q = query.lower()
+            matched = [
+                i for i in normalized
+                if q in (i.get("content_html") or "").lower()
+                or q in (i.get("title") or "").lower()
+            ]
+            if category:
+                matched = [i for i in matched if category in i.get("tags", [])]
+            return {"ok": True, "data": {"items": matched}}
         params: dict = {"search": query}
         if category:
             params["category"] = category
         resp = self._client.get(f"/posts/{username}", params=params)
         return self._handle_response(resp)
+
+    @staticmethod
+    def _normalize_micropub_items(items: list, owner: str | None = None) -> list:
+        """Convert Micropub h-entry items to JSON Feed-compatible format."""
+        out = []
+        for item in items:
+            props = item.get("properties", {})
+            content_list = props.get("content", [])
+            content = content_list[0] if content_list else ""
+            name_list = props.get("name", [])
+            title = name_list[0] if name_list else ""
+            url_list = props.get("url", [])
+            url = url_list[0] if url_list else ""
+            uid_list = props.get("uid", [])
+            uid = str(uid_list[0]) if uid_list else ""
+            pub_list = props.get("published", [])
+            published = pub_list[0] if pub_list else ""
+            categories = props.get("category", [])
+            status_list = props.get("post-status", [])
+            status = status_list[0] if status_list else "published"
+            item: dict = {
+                "id": uid,
+                "url": url,
+                "title": title,
+                "content_html": content,
+                "date_published": published,
+                "tags": categories,
+                "_microblog": {"post_status": status},
+            }
+            if owner:
+                item["author"] = {"_microblog": {"username": owner}}
+            out.append(item)
+        return out
 
     # ── Micropub API (writes) ───────────────────────────────
 
@@ -194,6 +252,8 @@ class MicroblogClient:
             "action": "update",
             "url": url,
         }
+        if self.default_destination:
+            data["mp-destination"] = self.default_destination
         replace = {}
         if content is not None:
             replace["content"] = [content]
@@ -208,28 +268,38 @@ class MicroblogClient:
         return self._handle_micropub_response(resp)
 
     def micropub_delete(self, url: str) -> dict:
-        data = {
+        data: dict = {
             "action": "delete",
             "url": url,
         }
+        if self.default_destination:
+            data["mp-destination"] = self.default_destination
         resp = self._client.post("/micropub", data=data)
         return self._handle_micropub_response(resp)
 
     def micropub_get(self, url: str) -> dict:
         """GET /micropub?q=source&url=<url> — fetch a single post's properties."""
-        resp = self._client.get("/micropub", params={"q": "source", "url": url})
+        params: dict = {"q": "source", "url": url}
+        if self.default_destination:
+            params["mp-destination"] = self.default_destination
+        resp = self._client.get("/micropub", params=params)
         return self._handle_response(resp)
 
     def micropub_list(self, drafts: bool = False) -> dict:
         params: dict = {"q": "source"}
         if drafts:
             params["post-status"] = "draft"
+        if self.default_destination:
+            params["mp-destination"] = self.default_destination
         resp = self._client.get("/micropub", params=params)
         return self._handle_response(resp)
 
     def micropub_get_categories(self) -> dict:
         """GET /micropub?q=category — list all categories."""
-        resp = self._client.get("/micropub", params={"q": "category"})
+        params: dict = {"q": "category"}
+        if self.default_destination:
+            params["mp-destination"] = self.default_destination
+        resp = self._client.get("/micropub", params=params)
         return self._handle_response(resp)
 
     def micropub_get_config(self) -> dict:

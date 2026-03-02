@@ -36,13 +36,16 @@ def _relative_time(timestamp: str) -> str:
 
 
 def _extract_username(author: dict) -> str:
-    """Extract username from author URL (e.g. https://micro.blog/username).
+    """Extract @username from author object.
 
-    Falls back to author name if URL is missing or unparseable.
+    Prefers _microblog.username (canonical micro.blog handle), then falls
+    back to parsing the URL, then the display name.
     """
+    mb = author.get("_microblog")
+    if isinstance(mb, dict) and mb.get("username"):
+        return mb["username"]
     url = author.get("url", "")
     if url:
-        # https://micro.blog/username → username
         parts = url.rstrip("/").split("/")
         if parts:
             return parts[-1]

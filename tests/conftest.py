@@ -11,9 +11,9 @@ from mb.api import MicroblogClient
 
 VERIFY_RESPONSE = {
     "username": "testuser",
-    "name": "Test User",
-    "url": "https://testuser.micro.blog/",
-    "avatar": "https://micro.blog/testuser/avatar.jpg",
+    "full_name": "Test User",
+    "default_site": "testuser.micro.blog",
+    "gravatar_url": "https://micro.blog/testuser/avatar.jpg",
 }
 
 TIMELINE_ITEMS = [
@@ -123,6 +123,10 @@ def _make_handler(routes: dict):
         if path == "/rate-limited":
             return httpx.Response(429, headers={"Retry-After": "60"})
 
+        # Token verify endpoint
+        if method == "POST" and path == "/account/verify":
+            return httpx.Response(200, json=VERIFY_RESPONSE)
+
         # Auth failure test route
         if request.headers.get("Authorization") == "Bearer bad-token":
             return httpx.Response(401, json={"error": "Unauthorized"})
@@ -167,7 +171,7 @@ def _make_handler(routes: dict):
 def mock_client():
     """Return a MicroblogClient backed by a mock transport."""
     routes = {
-        ("GET", "/posts/account/verify"): (200, VERIFY_RESPONSE, {}),
+        ("GET", "/users/is_following"): (200, {"is_following": True, "is_you": False}, {}),
         ("GET", "/posts/all"): (200, {"items": TIMELINE_ITEMS}, {}),
         ("GET", "/posts/mentions"): (200, {"items": TIMELINE_ITEMS[:1]}, {}),
         ("GET", "/posts/photos"): (200, {"items": TIMELINE_ITEMS}, {}),
@@ -184,7 +188,6 @@ def mock_client():
         ("GET", "/users/following/testuser"): (200, [
             {"username": "alice"}, {"username": "bob"},
         ], {}),
-        ("GET", "/users/is-following/alice"): (200, {"is_following": True}, {}),
         ("POST", "/users/follow"): (200, {}, {}),
         ("POST", "/users/unfollow"): (200, {}, {}),
         ("POST", "/users/mute"): (200, {}, {}),

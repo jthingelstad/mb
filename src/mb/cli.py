@@ -110,9 +110,9 @@ def whoami(ctx: typer.Context):
         data = result["data"]
         output({"ok": True, "data": {
             "username": data.get("username", ""),
-            "url": data.get("url", ""),
-            "name": data.get("name", ""),
-            "avatar": data.get("avatar", ""),
+            "url": f"https://{data.get('default_site', '')}" if data.get("default_site") else data.get("url", ""),
+            "name": data.get("name") or data.get("full_name", ""),
+            "avatar": data.get("avatar") or data.get("gravatar_url", ""),
             "profile": get_profile(ctx),
         }}, fmt)
     else:
