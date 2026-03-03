@@ -25,7 +25,7 @@ mb/
 │   ├── conversation.py  # Thread fetching
 │   ├── user.py      # Social graph commands
 │   ├── blog.py      # Read own blog posts, categories, search
-│   └── memory.py    # Agent long-term memory (posts + categories)
+│   └── notes.py     # Supplementary notes (posts + categories)
 └── formatters.py    # Output modes: json | human | agent
 ```
 
@@ -117,7 +117,7 @@ The `--human` flag switches to `rich`-formatted readable output. The `--format a
 
 ```
 [12345] @username (2h): Post content here.
-[12346] @other (1h) [memory, core-memory]: A categorized post.
+[12346] @other (1h) [notes, preferences]: A categorized post.
 ```
 
 ## Commands Reference
@@ -204,42 +204,41 @@ mb blog categories                   List all categories/tags on your blog
 mb blog search "<query>"             Search your blog posts
 ```
 
-### Memory (agent long-term memory)
+### Notes (public supplementary notes on micro.blog)
 
-The memory system uses blog posts with categories as the storage primitive. The agent decides which categories constitute "memory" — there are no hardcoded memory types.
+Notes are **public blog posts** that supplement the agent's internal memory. They are NOT a replacement for the agent's own memory system (MEMORY.md or equivalent). Private or sensitive information must never be stored as notes — only in the agent's internal memory.
 
 ```
-mb memory add "<content>"                         Default category: memory
-mb memory add "<content>" --category core-memory
-mb memory add "<content>" -c preferences -c memory  Multiple categories
-mb memory add "<content>" --draft                   Private memory (draft post)
-mb memory add "<content>" --title "User prefs"      Titled memory
-mb memory recall                                    Recall from "memory" category
-mb memory recall --category core-memory             Recall specific category
-mb memory recall --search "dark mode"               Search within memories
-mb memory recall --search "X" -c preferences        Search within a category
-mb memory recall --count 50                         Control result count
-mb memory forget <id>                               Delete a memory by ID or URL
-mb memory categories                                List all categories in use
-mb memory guide                                     Print agent usage guide
+mb notes add "<content>"                            Default category: notes
+mb notes add "<content>" --category preferences
+mb notes add "<content>" -c preferences -c notes    Multiple categories
+mb notes add "<content>" --title "User prefs"       Titled note
+mb notes recall                                     Recall from "notes" category
+mb notes recall --category preferences              Recall specific category
+mb notes recall --search "dark mode"                Search within notes
+mb notes recall --search "X" -c preferences         Search within a category
+mb notes recall --count 50                          Control result count
+mb notes forget <id>                                Delete a note by ID or URL
+mb notes categories                                 List all categories in use
+mb notes guide                                      Print agent usage guide
 ```
 
-The agent is free to create any categories it needs. Example category taxonomy:
-- `memory` — general memories
-- `core-memory` — important, persistent facts
-- `preferences` — user preferences
-- `journal` — session logs or reflections
-- `context` — conversation context to remember
+The agent is free to create any categories it needs. Recommended category taxonomy:
+- `notes` — general catch-all (default category)
+- `preferences` — user preferences and settings
+- `context` — conversation context worth persisting across sessions
+- `journal` — session logs, reflections, observations
+- `learned` — things you learned or corrected
 
 ### Agent Skill Integration
 
-`mb memory guide` outputs a complete usage guide that an agent can consume at session start. This guide covers recommended categories, common patterns (session start/end, corrections, private memories), and best practices. Agents should run this command once to learn the memory system, then use memory commands throughout their session.
+`mb notes guide` outputs a complete usage guide that an agent can consume at session start. This guide covers recommended categories, common patterns, and best practices — including the distinction between notes (public, supplementary) and internal memory (private, primary). Agents should run this command once to learn the notes system.
 
 **Recommended agent session lifecycle:**
 
-1. **Session start:** `mb memory recall -c core-memory` and `mb memory recall -c preferences` to load context
-2. **During session:** Store important facts as they arise with `mb memory add`
-3. **Session end:** Persist learnings with appropriate categories
+1. **Session start:** `mb notes recall -c preferences` and `mb notes recall -c context` to supplement internal memory
+2. **During session:** Store things worth publishing with `mb notes add`; keep private data in internal memory
+3. **Session end:** Persist learnings to notes (public) or internal memory (private) as appropriate
 
 ### Utilities
 

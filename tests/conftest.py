@@ -91,7 +91,7 @@ CHECK_RESPONSE = {
 }
 
 CATEGORIES_RESPONSE = {
-    "categories": ["memory", "core-memory", "journal", "preferences"],
+    "categories": ["notes", "journal", "preferences"],
 }
 
 MICROPUB_CONFIG_RESPONSE = {
@@ -109,7 +109,7 @@ MICROPUB_SOURCE_RESPONSE = {
         "content": ["Hello world"],
         "published": ["2026-02-28T12:00:00+00:00"],
         "url": ["https://testuser.micro.blog/2026/02/28/hello.html"],
-        "category": ["memory", "core-memory"],
+        "category": ["notes", "preferences"],
     },
 }
 

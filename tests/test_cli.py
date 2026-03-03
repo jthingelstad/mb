@@ -34,7 +34,7 @@ def _mock_transport(routes: dict | None = None):
             if q == "config":
                 return httpx.Response(200, json=MICROPUB_CONFIG_RESPONSE)
             if q == "category":
-                return httpx.Response(200, json={"categories": ["memory", "test"]})
+                return httpx.Response(200, json={"categories": ["notes", "test"]})
             return httpx.Response(200, json=MICROPUB_LIST_RESPONSE)
 
         if method == "POST" and path == "/micropub":
@@ -155,10 +155,10 @@ class TestPostNew:
         assert data["data"]["content"] == "Body content"
 
     def test_dry_run_with_categories(self):
-        result = _invoke(["post", "new", "--dry-run", "-c", "memory", "-c", "test", "Tagged post"])
+        result = _invoke(["post", "new", "--dry-run", "-c", "notes", "-c", "test", "Tagged post"])
         assert result.exit_code == 0
         data = json.loads(result.output)
-        assert data["data"]["categories"] == ["memory", "test"]
+        assert data["data"]["categories"] == ["notes", "test"]
 
 
 class TestGlobalFlagOrdering:

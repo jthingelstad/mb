@@ -147,17 +147,17 @@ mb blog categories           List categories
 mb blog search "query"       Search your posts
 ```
 
-### Memory
+### Notes
 
-An agent memory system that uses blog posts with categories as storage:
+Public supplementary notes stored as blog posts with categories. Notes augment an agent's internal memory — they are not a replacement for it.
 
 ```
-mb memory add "Important fact" --category core-memory
-mb memory recall --category core-memory
-mb memory recall --search "keyword"
-mb memory forget <id>        Delete a memory by ID or URL
-mb memory categories
-mb memory guide              Print the full agent usage guide
+mb notes add "Important fact" --category preferences
+mb notes recall --category preferences
+mb notes recall --search "keyword"
+mb notes forget <id>         Delete a note by ID or URL
+mb notes categories
+mb notes guide               Print the full agent usage guide
 ```
 
 ## Development

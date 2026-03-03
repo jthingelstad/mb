@@ -1,4 +1,4 @@
-"""Tests for new agent-oriented features: post edit, post get, memory forget,
+"""Tests for new agent-oriented features: post edit, post get, notes forget,
 search+category fix, agent output with categories, and @username extraction."""
 
 import json
@@ -25,7 +25,7 @@ class TestMicropubUpdate:
     def test_update_categories(self, mock_client):
         result = mock_client.micropub_update(
             "https://testuser.micro.blog/2026/02/28/hello.html",
-            categories=["memory", "core-memory"],
+            categories=["notes", "preferences"],
         )
         assert result["ok"] is True
 
@@ -49,7 +49,7 @@ class TestMicropubGet:
 
 class TestSearchWithCategory:
     def test_search_blog_with_category(self, mock_client):
-        result = mock_client.search_blog("testuser", query="hello", category="memory")
+        result = mock_client.search_blog("testuser", query="hello", category="notes")
         assert result["ok"] is True
 
     def test_search_blog_without_category(self, mock_client):
@@ -151,7 +151,7 @@ class TestAgentOutputWithCategories:
                         "date_published": "2026-02-28T12:00:00+00:00",
                         "author": {"name": "agent", "url": "https://micro.blog/agent"},
                         "_microblog": {
-                            "categories": ["preferences", "core-memory"],
+                            "categories": ["preferences", "notes"],
                         },
                     }
                 ]
@@ -159,7 +159,7 @@ class TestAgentOutputWithCategories:
         }
         output_agent(data)
         captured = capsys.readouterr()
-        assert "[preferences, core-memory]" in captured.out
+        assert "[preferences, notes]" in captured.out
         assert "@agent" in captured.out
 
     def test_no_categories(self, capsys):

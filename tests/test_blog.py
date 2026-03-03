@@ -8,7 +8,7 @@ class TestBlogPosts:
         assert "items" in result["data"]
 
     def test_get_blog_posts_with_category(self, mock_client):
-        result = mock_client.get_blog_posts("testuser", category="memory")
+        result = mock_client.get_blog_posts("testuser", category="notes")
         assert result["ok"] is True
 
 
@@ -17,7 +17,7 @@ class TestCategories:
         result = mock_client.micropub_get_categories()
         assert result["ok"] is True
         assert "categories" in result["data"]
-        assert "memory" in result["data"]["categories"]
+        assert "notes" in result["data"]["categories"]
 
     def test_get_config(self, mock_client):
         result = mock_client.micropub_get_config()
@@ -36,8 +36,8 @@ class TestSearch:
 class TestMicropubWithCategories:
     def test_create_post_with_categories(self, mock_client):
         result = mock_client.micropub_create(
-            content="A memory",
-            categories=["memory", "core-memory"],
+            content="A note",
+            categories=["notes", "preferences"],
         )
         assert result["ok"] is True
         assert "url" in result["data"]

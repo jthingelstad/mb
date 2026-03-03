@@ -7,7 +7,7 @@ import typer.core
 
 from mb import config
 from mb.api import MicroblogClient
-from mb.commands import blog, conversation, memory, post, timeline, user
+from mb.commands import blog, conversation, notes, post, timeline, user
 from mb.formatters import output
 
 
@@ -40,7 +40,7 @@ app.add_typer(post.app, name="post", help="Publishing commands")
 app.add_typer(timeline.app, name="timeline", help="Reading/discovery commands")
 app.add_typer(user.app, name="user", help="Social graph commands")
 app.add_typer(blog.app, name="blog", help="Read your own blog")
-app.add_typer(memory.app, name="memory", help="Agent long-term memory")
+app.add_typer(notes.app, name="notes", help="Supplementary notes on micro.blog")
 
 # ── Global options ──────────────────────────────────────────
 
