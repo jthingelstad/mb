@@ -7,7 +7,7 @@ import httpx
 from typer.testing import CliRunner
 
 from mb.cli import app
-from tests.conftest import VERIFY_RESPONSE, MICROPUB_LIST_RESPONSE, MICROPUB_CONFIG_RESPONSE
+from tests.conftest import VERIFY_RESPONSE, MICROPUB_LIST_RESPONSE, MICROPUB_CONFIG_RESPONSE, CONVERSATION_RESPONSE
 
 runner = CliRunner()
 
@@ -42,6 +42,9 @@ def _mock_transport(routes: dict | None = None):
                 201, text="",
                 headers={"Location": "https://testuser.micro.blog/2026/02/28/newpost.html"},
             )
+
+        if method == "GET" and path == "/posts/conversation":
+            return httpx.Response(200, json=CONVERSATION_RESPONSE)
 
         return httpx.Response(404, json={"error": "Not found"})
 
@@ -194,6 +197,37 @@ class TestGlobalFlagOrdering:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["ok"] is True
+
+
+class TestPostReply:
+    def test_reply_bare_id_builds_microblog_url(self):
+        """Bug fix: bare ID should resolve via conversation API, not build broken URL."""
+        result = _invoke(["post", "reply", "100", "Nice post!"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+
+    def test_reply_full_url_passthrough(self):
+        """Full URLs should be used as-is for in-reply-to."""
+        result = _invoke(["post", "reply", "https://micro.blog/alice/100", "Great!"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+
+    def test_reply_empty_content_error(self):
+        result = _invoke(["post", "reply", "100", ""])
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert "empty" in data["error"].lower()
+
+    def test_reply_not_found_error(self):
+        """Reply to a post ID not in the conversation should fail."""
+        result = _invoke(["post", "reply", "99999", "Hello"])
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert "not found" in data["error"].lower()
 
 
 class TestBlogs:

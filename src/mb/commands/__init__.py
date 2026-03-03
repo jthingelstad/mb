@@ -88,3 +88,52 @@ def resolve_post_url(client, post_id: str, fmt: str):
         output({"ok": False, "error": f"Post {post_id} not found", "code": 404}, fmt)
         raise SystemExit(1)
     return _micropub_item_url(matched[0])
+
+
+def resolve_reply_url(client, post_id: str, fmt: str) -> str:
+    """Resolve a post ID to a micro.blog conversation URL for in-reply-to.
+
+    The Micropub in-reply-to field requires the https://micro.blog/username/id
+    format for threading to work. This fetches the post via the conversation
+    API to determine the author username.
+
+    Returns the URL string, or calls output + SystemExit(1) on failure.
+    """
+    from mb.formatters import output
+
+    if post_id.startswith("http"):
+        return post_id
+
+    try:
+        id_int = int(post_id)
+    except ValueError:
+        output({"ok": False, "error": f"Invalid post ID: {post_id}", "code": 400}, fmt)
+        raise SystemExit(1)
+
+    result = client.get_conversation(id_int)
+    if not result["ok"]:
+        output(result, fmt)
+        raise SystemExit(1)
+
+    items = result["data"].get("items", [])
+    for item in items:
+        if str(item.get("id")) == post_id:
+            author = item.get("author", {})
+            username = _extract_author_username(author)
+            return f"https://micro.blog/{username}/{post_id}"
+
+    output({"ok": False, "error": f"Post {post_id} not found in conversation", "code": 404}, fmt)
+    raise SystemExit(1)
+
+
+def _extract_author_username(author: dict) -> str:
+    """Extract username from an author object."""
+    mb = author.get("_microblog")
+    if isinstance(mb, dict) and mb.get("username"):
+        return mb["username"]
+    url = author.get("url", "")
+    if url:
+        parts = url.rstrip("/").split("/")
+        if parts:
+            return parts[-1]
+    return author.get("name", "")

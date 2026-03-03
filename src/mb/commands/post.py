@@ -5,7 +5,7 @@ from pathlib import Path
 
 import typer
 
-from mb.commands import get_client, get_format, get_username, output_or_exit, resolve_post_url, add_content_text
+from mb.commands import get_client, get_format, get_username, output_or_exit, resolve_post_url, resolve_reply_url, add_content_text
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -169,11 +169,7 @@ def reply(
         output({"ok": False, "error": "Content is empty", "code": 400}, fmt)
         raise SystemExit(1)
 
-    # If post_id looks like a bare ID, construct the URL
-    reply_to = post_id
-    if not post_id.startswith("http"):
-        reply_to = f"https://micro.blog/{post_id}"
-
+    reply_to = resolve_reply_url(client, post_id, fmt)
     result = client.micropub_create(content=content, reply_to=reply_to)
     output_or_exit(result, fmt)
 

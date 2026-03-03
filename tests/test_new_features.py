@@ -3,7 +3,7 @@ search+category fix, agent output with categories, and @username extraction."""
 
 import json
 
-from mb.commands import _micropub_item_url
+from mb.commands import _micropub_item_url, resolve_reply_url, _extract_author_username
 from mb.formatters import _extract_username, output_agent
 
 
@@ -77,6 +77,49 @@ class TestMicropubItemUrl:
     def test_properties_empty_url_list(self):
         item = {"properties": {"url": [], "content": ["Hello"]}}
         assert _micropub_item_url(item) == ""
+
+
+class TestResolveReplyUrl:
+    def test_bare_id_resolves_to_microblog_url(self, mock_client):
+        """Bare post ID should resolve to https://micro.blog/username/id format."""
+        url = resolve_reply_url(mock_client, "100", "json")
+        assert url == "https://micro.blog/alice/100"
+
+    def test_bare_id_different_author(self, mock_client):
+        """Reply to a post by a different author."""
+        url = resolve_reply_url(mock_client, "101", "json")
+        assert url == "https://micro.blog/bob/101"
+
+    def test_full_url_passthrough(self, mock_client):
+        """Full URLs should pass through without API call."""
+        url = resolve_reply_url(mock_client, "https://micro.blog/someone/12345", "json")
+        assert url == "https://micro.blog/someone/12345"
+
+    def test_not_found_exits(self, mock_client):
+        """Post ID not in conversation should exit with error."""
+        import pytest
+        with pytest.raises(SystemExit):
+            resolve_reply_url(mock_client, "99999", "json")
+
+    def test_invalid_id_exits(self, mock_client):
+        """Non-numeric bare ID should exit with error."""
+        import pytest
+        with pytest.raises(SystemExit):
+            resolve_reply_url(mock_client, "not-a-number", "json")
+
+
+class TestExtractAuthorUsername:
+    def test_from_microblog_extension(self):
+        author = {"name": "Alice", "_microblog": {"username": "alice"}}
+        assert _extract_author_username(author) == "alice"
+
+    def test_from_url(self):
+        author = {"name": "Alice", "url": "https://micro.blog/alice"}
+        assert _extract_author_username(author) == "alice"
+
+    def test_fallback_to_name(self):
+        author = {"name": "alice"}
+        assert _extract_author_username(author) == "alice"
 
 
 class TestExtractUsername:

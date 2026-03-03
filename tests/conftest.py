@@ -61,22 +61,25 @@ CONVERSATION_RESPONSE = {
         {
             "id": 100,
             "content_html": "<p>Root post</p>",
+            "url": "https://alice.micro.blog/2026/02/28/root.html",
             "date_published": "2026-02-28T10:00:00+00:00",
-            "author": {"name": "alice"},
+            "author": {"name": "alice", "url": "https://micro.blog/alice", "_microblog": {"username": "alice"}},
             "_microblog": {},
         },
         {
             "id": 101,
             "content_html": "<p>Reply to root</p>",
+            "url": "https://bob.micro.blog/2026/02/28/reply.html",
             "date_published": "2026-02-28T10:05:00+00:00",
-            "author": {"name": "bob"},
+            "author": {"name": "bob", "url": "https://micro.blog/bob", "_microblog": {"username": "bob"}},
             "_microblog": {"reply_to_id": 100},
         },
         {
             "id": 102,
             "content_html": "<p>Reply to reply</p>",
+            "url": "https://alice.micro.blog/2026/02/28/reply2.html",
             "date_published": "2026-02-28T10:10:00+00:00",
-            "author": {"name": "alice"},
+            "author": {"name": "alice", "url": "https://micro.blog/alice", "_microblog": {"username": "alice"}},
             "_microblog": {"reply_to_id": 101},
         },
     ]
