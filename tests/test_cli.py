@@ -46,6 +46,13 @@ def _mock_transport(routes: dict | None = None):
         if method == "GET" and path == "/posts/conversation":
             return httpx.Response(200, json=CONVERSATION_RESPONSE)
 
+        if method == "POST" and path == "/posts/reply":
+            return httpx.Response(200, json={
+                "id": 103,
+                "url": "https://micro.blog/testuser/103",
+                "content_html": "<p>reply</p>",
+            })
+
         return httpx.Response(404, json={"error": "Not found"})
 
     return httpx.MockTransport(handler)
@@ -200,15 +207,15 @@ class TestGlobalFlagOrdering:
 
 
 class TestPostReply:
-    def test_reply_bare_id_builds_microblog_url(self):
-        """Bug fix: bare ID should resolve via conversation API, not build broken URL."""
+    def test_reply_bare_id_uses_native_api(self):
+        """Bare ID should reply via POST /posts/reply (native API)."""
         result = _invoke(["post", "reply", "100", "Nice post!"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["ok"] is True
 
-    def test_reply_full_url_passthrough(self):
-        """Full URLs should be used as-is for in-reply-to."""
+    def test_reply_url_extracts_id(self):
+        """micro.blog URL should extract numeric ID and use native API."""
         result = _invoke(["post", "reply", "https://micro.blog/alice/100", "Great!"])
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -228,6 +235,60 @@ class TestPostReply:
         data = json.loads(result.output)
         assert data["ok"] is False
         assert "not found" in data["error"].lower()
+
+    def test_reply_invalid_url_error(self):
+        """Blog URL with no numeric ID should fail."""
+        result = _invoke(["post", "reply", "https://alice.micro.blog/2026/02/28/hello.html", "Hi"])
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert "cannot extract" in data["error"].lower()
+
+
+class TestTimelineCheckpoint:
+    def test_checkpoint_save_and_read(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            # Save checkpoint
+            result = runner.invoke(app, ["timeline", "checkpoint", "85444200"])
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["ok"] is True
+            assert data["data"]["checkpoint"] == 85444200
+
+            # Read checkpoint back
+            result = runner.invoke(app, ["timeline", "checkpoint"])
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["ok"] is True
+            assert data["data"]["checkpoint"] == 85444200
+
+    def test_checkpoint_no_saved(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["timeline", "checkpoint"])
+            assert result.exit_code == 1
+            data = json.loads(result.output)
+            assert data["ok"] is False
+            assert "no checkpoint" in data["error"].lower()
 
 
 class TestBlogs:

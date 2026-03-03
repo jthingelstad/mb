@@ -74,6 +74,29 @@ def list_profiles() -> list[dict]:
     return profiles
 
 
+def get_checkpoint(profile: str = DEFAULT_PROFILE) -> int | None:
+    """Return saved timeline checkpoint ID from config file profile."""
+    val = _get_profile(_load_config_file(), profile).get("checkpoint")
+    return int(val) if val is not None else None
+
+
+def save_checkpoint(checkpoint_id: int, profile: str = DEFAULT_PROFILE) -> None:
+    """Save a timeline checkpoint ID to the config file profile."""
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    config = _load_config_file()
+
+    # Migrate legacy flat format if needed
+    if "token" in config and not any(isinstance(v, dict) for v in config.values()):
+        old = dict(config)
+        config = {DEFAULT_PROFILE: old}
+
+    if profile not in config or not isinstance(config.get(profile), dict):
+        config[profile] = {}
+
+    config[profile]["checkpoint"] = checkpoint_id
+    _write_config(config)
+
+
 def save_config(token: str, username: str | None = None,
                 blog: str | None = None, profile: str = DEFAULT_PROFILE) -> None:
     """Write token (and optional username/blog) to a profile in config file."""

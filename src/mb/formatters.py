@@ -143,7 +143,8 @@ def output_agent(data: dict) -> None:
             if not cats:
                 cats = item.get("_microblog", {}).get("categories", []) if isinstance(item.get("_microblog"), dict) else []
             cat_str = f" [{', '.join(cats)}]" if cats else ""
-            print(f"[{post_id}] @{author} ({time}){cat_str}: {content}")
+            indent = "  " * item.get("depth", 0)
+            print(f"{indent}[{post_id}] @{author} ({time}){cat_str}: {content}")
         return
 
     # Single result fallback

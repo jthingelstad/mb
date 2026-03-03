@@ -2,7 +2,7 @@
 
 import typer
 
-from mb.commands import get_client, get_format, output_or_exit, add_content_text
+from mb.commands import get_client, get_format, get_profile, output_or_exit, add_content_text
 
 app = typer.Typer(no_args_is_help=False, invoke_without_command=True)
 
@@ -72,3 +72,29 @@ def check(
     client = get_client(ctx)
     result = client.check_timeline(since_id=since)
     output_or_exit(result, fmt)
+
+
+@app.command()
+def checkpoint(
+    ctx: typer.Context,
+    post_id: int = typer.Argument(None, help="Post ID to save as checkpoint"),
+):
+    """Read or save a timeline checkpoint ID.
+
+    With no argument, prints the saved checkpoint. With an ID, saves it.
+    """
+    from mb import config
+    from mb.formatters import output
+
+    fmt = get_format(ctx)
+    profile = get_profile(ctx)
+
+    if post_id is None:
+        saved = config.get_checkpoint(profile=profile)
+        if saved is None:
+            output({"ok": False, "error": "No checkpoint saved", "code": 404}, fmt)
+            raise SystemExit(1)
+        output({"ok": True, "data": {"checkpoint": saved}}, fmt)
+    else:
+        config.save_checkpoint(post_id, profile=profile)
+        output({"ok": True, "data": {"checkpoint": post_id}}, fmt)

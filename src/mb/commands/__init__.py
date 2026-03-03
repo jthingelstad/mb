@@ -66,7 +66,12 @@ def _micropub_item_url(item: dict) -> str:
 
 
 def resolve_post_url(client, post_id: str, fmt: str):
-    """Resolve a bare post ID to a full URL via Micropub listing.
+    """Resolve a bare post ID to a full URL for Micropub operations.
+
+    - Full URLs pass through as-is.
+    - Bare numeric IDs are resolved via the conversation API (which returns
+      items with both ``id`` and ``url`` fields).
+    - Other identifiers (slugs) fall back to micropub listing suffix match.
 
     Returns the URL string, or calls output + SystemExit(1) on failure.
     """
@@ -75,6 +80,21 @@ def resolve_post_url(client, post_id: str, fmt: str):
     if post_id.startswith("http"):
         return post_id
 
+    # Bare numeric ID — resolve via conversation API
+    if post_id.isdigit():
+        result = client.get_conversation(int(post_id))
+        if not result["ok"]:
+            output(result, fmt)
+            raise SystemExit(1)
+        for item in result["data"].get("items", []):
+            if str(item.get("id")) == post_id:
+                url = item.get("url", "")
+                if url:
+                    return url
+        output({"ok": False, "error": f"Post {post_id} not found", "code": 404}, fmt)
+        raise SystemExit(1)
+
+    # Slug-based identifier — fall back to micropub listing suffix match
     listing = client.micropub_list()
     if not listing["ok"]:
         output(listing, fmt)
@@ -89,41 +109,6 @@ def resolve_post_url(client, post_id: str, fmt: str):
         raise SystemExit(1)
     return _micropub_item_url(matched[0])
 
-
-def resolve_reply_url(client, post_id: str, fmt: str) -> str:
-    """Resolve a post ID to a micro.blog conversation URL for in-reply-to.
-
-    The Micropub in-reply-to field requires the https://micro.blog/username/id
-    format for threading to work. This fetches the post via the conversation
-    API to determine the author username.
-
-    Returns the URL string, or calls output + SystemExit(1) on failure.
-    """
-    from mb.formatters import output
-
-    if post_id.startswith("http"):
-        return post_id
-
-    try:
-        id_int = int(post_id)
-    except ValueError:
-        output({"ok": False, "error": f"Invalid post ID: {post_id}", "code": 400}, fmt)
-        raise SystemExit(1)
-
-    result = client.get_conversation(id_int)
-    if not result["ok"]:
-        output(result, fmt)
-        raise SystemExit(1)
-
-    items = result["data"].get("items", [])
-    for item in items:
-        if str(item.get("id")) == post_id:
-            author = item.get("author", {})
-            username = _extract_author_username(author)
-            return f"https://micro.blog/{username}/{post_id}"
-
-    output({"ok": False, "error": f"Post {post_id} not found in conversation", "code": 404}, fmt)
-    raise SystemExit(1)
 
 
 def _extract_author_username(author: dict) -> str:

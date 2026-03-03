@@ -114,6 +114,8 @@ mb timeline mentions         Your mentions
 mb timeline photos           Photo timeline
 mb timeline discover         Discover feed
 mb timeline check --since <id>   Check for new posts
+mb timeline checkpoint           Print saved checkpoint ID
+mb timeline checkpoint <id>      Save checkpoint ID to config
 ```
 
 ### Conversations

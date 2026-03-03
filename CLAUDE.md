@@ -167,6 +167,8 @@ mb timeline photos
 mb timeline discover
 mb timeline discover --collection <name>   e.g. books, music
 mb timeline check --since <id>       Returns new_count + poll_interval
+mb timeline checkpoint               Print saved checkpoint ID
+mb timeline checkpoint <id>          Save checkpoint ID to config
 ```
 
 ### Conversation

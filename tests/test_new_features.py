@@ -3,7 +3,8 @@ search+category fix, agent output with categories, and @username extraction."""
 
 import json
 
-from mb.commands import _micropub_item_url, resolve_reply_url, _extract_author_username
+from mb.commands import _micropub_item_url, resolve_post_url, _extract_author_username
+from mb.commands.post import _extract_post_id
 from mb.formatters import _extract_username, output_agent
 
 
@@ -79,33 +80,22 @@ class TestMicropubItemUrl:
         assert _micropub_item_url(item) == ""
 
 
-class TestResolveReplyUrl:
-    def test_bare_id_resolves_to_microblog_url(self, mock_client):
-        """Bare post ID should resolve to https://micro.blog/username/id format."""
-        url = resolve_reply_url(mock_client, "100", "json")
-        assert url == "https://micro.blog/alice/100"
+class TestExtractPostId:
+    def test_bare_numeric(self):
+        assert _extract_post_id("85444185") == 85444185
 
-    def test_bare_id_different_author(self, mock_client):
-        """Reply to a post by a different author."""
-        url = resolve_reply_url(mock_client, "101", "json")
-        assert url == "https://micro.blog/bob/101"
+    def test_microblog_url(self):
+        assert _extract_post_id("https://micro.blog/alice/100") == 100
 
-    def test_full_url_passthrough(self, mock_client):
-        """Full URLs should pass through without API call."""
-        url = resolve_reply_url(mock_client, "https://micro.blog/someone/12345", "json")
-        assert url == "https://micro.blog/someone/12345"
+    def test_microblog_url_trailing_slash(self):
+        assert _extract_post_id("https://micro.blog/alice/100/") == 100
 
-    def test_not_found_exits(self, mock_client):
-        """Post ID not in conversation should exit with error."""
-        import pytest
-        with pytest.raises(SystemExit):
-            resolve_reply_url(mock_client, "99999", "json")
+    def test_blog_url_non_numeric(self):
+        """Blog URLs with slug paths should return None."""
+        assert _extract_post_id("https://alice.micro.blog/2026/02/28/hello.html") is None
 
-    def test_invalid_id_exits(self, mock_client):
-        """Non-numeric bare ID should exit with error."""
-        import pytest
-        with pytest.raises(SystemExit):
-            resolve_reply_url(mock_client, "not-a-number", "json")
+    def test_non_numeric_string(self):
+        assert _extract_post_id("not-a-number") is None
 
 
 class TestExtractAuthorUsername:
@@ -203,3 +193,81 @@ class TestAgentOutputWithCategories:
         captured = capsys.readouterr()
         assert "@johnsmith" in captured.out
         assert "@John Smith" not in captured.out
+
+
+class TestResolvePostUrl:
+    def test_full_url_passthrough(self, mock_client):
+        url = resolve_post_url(mock_client, "https://example.com/post.html", "json")
+        assert url == "https://example.com/post.html"
+
+    def test_bare_numeric_id_resolves_via_conversation(self, mock_client):
+        """Bare numeric ID should resolve to the post's blog URL via conversation API."""
+        url = resolve_post_url(mock_client, "100", "json")
+        assert url == "https://alice.micro.blog/2026/02/28/root.html"
+
+    def test_bare_numeric_id_different_post(self, mock_client):
+        url = resolve_post_url(mock_client, "101", "json")
+        assert url == "https://bob.micro.blog/2026/02/28/reply.html"
+
+    def test_bare_numeric_id_not_found_exits(self, mock_client):
+        import pytest
+        with pytest.raises(SystemExit):
+            resolve_post_url(mock_client, "99999", "json")
+
+    def test_slug_falls_back_to_micropub(self, mock_client):
+        """Non-numeric identifiers should still use micropub listing suffix match."""
+        url = resolve_post_url(mock_client, "hello.html", "json")
+        assert url == "https://testuser.micro.blog/2026/02/28/hello.html"
+
+
+class TestAgentOutputDepth:
+    def test_depth_indentation(self, capsys):
+        data = {
+            "ok": True,
+            "data": {
+                "items": [
+                    {
+                        "id": 100, "depth": 0,
+                        "content_html": "<p>Root post</p>",
+                        "date_published": "2026-02-28T10:00:00+00:00",
+                        "author": {"name": "alice", "url": "https://micro.blog/alice"},
+                    },
+                    {
+                        "id": 101, "depth": 1,
+                        "content_html": "<p>Reply to root</p>",
+                        "date_published": "2026-02-28T10:05:00+00:00",
+                        "author": {"name": "bob", "url": "https://micro.blog/bob"},
+                    },
+                    {
+                        "id": 102, "depth": 2,
+                        "content_html": "<p>Reply to reply</p>",
+                        "date_published": "2026-02-28T10:10:00+00:00",
+                        "author": {"name": "alice", "url": "https://micro.blog/alice"},
+                    },
+                ]
+            },
+        }
+        output_agent(data)
+        lines = capsys.readouterr().out.strip().split("\n")
+        assert lines[0].startswith("[100]")
+        assert lines[1].startswith("  [101]")
+        assert lines[2].startswith("    [102]")
+
+    def test_no_depth_key_no_indent(self, capsys):
+        """Items without depth key should have no indentation (backwards compatible)."""
+        data = {
+            "ok": True,
+            "data": {
+                "items": [
+                    {
+                        "id": 200,
+                        "content_html": "<p>Normal post</p>",
+                        "date_published": "2026-02-28T12:00:00+00:00",
+                        "author": {"name": "test", "url": "https://micro.blog/test"},
+                    },
+                ]
+            },
+        }
+        output_agent(data)
+        captured = capsys.readouterr()
+        assert captured.out.startswith("[200]")

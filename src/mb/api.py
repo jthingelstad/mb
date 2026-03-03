@@ -218,6 +218,11 @@ class MicroblogClient:
 
     # ── Micropub API (writes) ───────────────────────────────
 
+    def post_reply(self, post_id: int, content: str) -> dict:
+        """POST /posts/reply — reply to a post via the native API."""
+        resp = self._client.post("/posts/reply", data={"id": post_id, "content": content})
+        return self._handle_response(resp)
+
     def micropub_create(self, *, content: str, title: str | None = None,
                         draft: bool = False, reply_to: str | None = None,
                         photo_url: str | None = None,
