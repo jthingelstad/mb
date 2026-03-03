@@ -202,7 +202,7 @@ def reply(
 
     username = None
     for item in conv["data"].get("items", []):
-        if item.get("id") == numeric_id:
+        if str(item.get("id")) == str(numeric_id):
             username = _extract_author_username(item.get("author", {}))
             break
 
