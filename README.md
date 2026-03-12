@@ -147,6 +147,7 @@ mb auth <token>              Store and verify a token
 mb whoami                    Show current user info
 mb profiles                  List configured profiles
 mb blogs                     List available blogs
+mb heartbeat                 Compact agent session snapshot
 mb following                 List who you follow
 mb follow <username|->       Follow one or more users
 mb unfollow <username|->     Unfollow one or more users
@@ -187,6 +188,9 @@ mb discover --collection books Topic discover feed alias
 mb timeline check --since <id>   Check for new posts
 mb timeline checkpoint           Print saved checkpoint ID
 mb timeline checkpoint <id>      Save checkpoint ID to config
+mb heartbeat --count 3 --mention-count 3
+mb heartbeat --mentions-only
+mb heartbeat --advance
 ```
 
 ### Conversations
@@ -261,6 +265,12 @@ Tests use `httpx.MockTransport` — no live API calls required.
 Pipeline examples:
 
 ```bash
+# Start an agent session with a bounded snapshot
+mb heartbeat
+
+# Check for new activity and advance the heartbeat cursor
+mb heartbeat --advance
+
 # Inspect the latest post from everyone you follow
 mb user following | mb lookup users --last-post
 

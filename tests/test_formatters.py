@@ -96,6 +96,30 @@ class TestOutputAgent:
         captured = capsys.readouterr()
         assert "@alice ok" in captured.out
 
+    def test_heartbeat_payload(self, capsys):
+        data = {"ok": True, "data": {
+            "kind": "heartbeat",
+            "username": "ottoai",
+            "mode": "since-checkpoint",
+            "checkpoint": 100,
+            "latest_id": 200,
+            "advanced": True,
+            "new_timeline_count": 2,
+            "new_mentions_count": 1,
+            "timeline": [{
+                "id": "200",
+                "content_html": "<p>Hello world</p>",
+                "date_published": "2026-03-12T12:00:00+00:00",
+                "author": {"name": "alice"},
+            }],
+            "mentions": [],
+        }}
+        output_agent(data)
+        captured = capsys.readouterr()
+        assert "@ottoai heartbeat mode=since-checkpoint checkpoint=100 latest=200 saved=true" in captured.out
+        assert "new_timeline=2 new_mentions=1" in captured.out
+        assert "timeline:" in captured.out
+
 
 class TestOutputHuman:
     def test_list_payload(self, capsys):
@@ -139,3 +163,21 @@ class TestOutputHuman:
         captured = capsys.readouterr()
         assert "follow" in captured.out.lower()
         assert "@alice" in captured.out
+
+    def test_heartbeat_payload(self, capsys):
+        data = {"ok": True, "data": {
+            "kind": "heartbeat",
+            "username": "ottoai",
+            "mode": "bootstrap",
+            "checkpoint": None,
+            "latest_id": 200,
+            "advanced": False,
+            "new_timeline_count": 2,
+            "new_mentions_count": 1,
+            "timeline": [],
+            "mentions": [],
+        }}
+        output_human(data)
+        captured = capsys.readouterr()
+        assert "Heartbeat for @ottoai (bootstrap) latest=200" in captured.out
+        assert "Timeline: 2 new" in captured.out

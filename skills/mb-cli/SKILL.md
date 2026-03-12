@@ -9,6 +9,7 @@ Use this skill whenever the task involves `mb`.
 
 ## Core rules
 
+- Start most agent sessions with `mb heartbeat`.
 - Default to `agent` output for exploration and pipelines.
 - Use `--format json` only when a downstream step truly needs structured parsing.
 - Prefer cheap list/read commands first.
@@ -21,6 +22,7 @@ Use this skill whenever the task involves `mb`.
 Cheap reads:
 
 ```bash
+mb heartbeat
 mb whoami
 mb timeline --count 10
 mb user following
@@ -34,6 +36,15 @@ Explicit enrichment:
 mb user following | mb lookup users --last-post
 mb user following | mb lookup users --days-since-posting
 ```
+
+## Heartbeat workflow
+
+- `mb heartbeat` is the default session-start check for agent use.
+- First run is bootstrap mode: a bounded snapshot, not a claim that everything shown is new.
+- Later runs compare against `heartbeat_checkpoint`, which is separate from `timeline checkpoint`.
+- Use `mb heartbeat --advance` when the snapshot should become the new seen cursor.
+- Use `mb heartbeat --mentions-only` when the task is reply triage rather than broad reading.
+- Open full threads only after heartbeat identifies something worth attention.
 
 ## Public boundaries
 
@@ -59,6 +70,15 @@ Act only after the intent is clear:
 ```
 
 ## Useful command patterns
+
+Session start:
+
+```bash
+mb heartbeat
+mb heartbeat --advance
+mb heartbeat --mentions-only
+mb heartbeat --count 3 --mention-count 3
+```
 
 Identity and config:
 

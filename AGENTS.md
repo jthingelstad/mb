@@ -99,6 +99,7 @@ mb auth <token>
 mb whoami
 mb profiles
 mb blogs
+mb heartbeat
 mb following
 mb follow <username|->
 mb unfollow <username|->
@@ -195,6 +196,22 @@ Top-level convenience aliases:
 - `mb follow` delegates to `mb user follow`
 - `mb unfollow` delegates to `mb user unfollow`
 - `mb discover` delegates to topic-based discover posts, equivalent to `mb timeline discover`
+
+Heartbeat:
+
+```text
+mb heartbeat
+mb heartbeat --count 3 --mention-count 3
+mb heartbeat --mentions-only
+mb heartbeat --advance
+```
+
+Heartbeat notes:
+
+- `mb heartbeat` is a compact session-start snapshot for agents
+- it uses a dedicated `heartbeat_checkpoint`, separate from `timeline checkpoint`
+- first run is a bounded bootstrap snapshot; later runs compare against the saved heartbeat checkpoint
+- `--advance` saves the newest seen post ID after the snapshot is generated
 
 Blog commands:
 

@@ -82,6 +82,18 @@ def get_checkpoint(profile: str = DEFAULT_PROFILE) -> int | None:
 
 def save_checkpoint(checkpoint_id: int, profile: str = DEFAULT_PROFILE) -> None:
     """Save a timeline checkpoint ID to the config file profile."""
+    save_named_checkpoint("timeline", checkpoint_id, profile=profile)
+
+
+def get_named_checkpoint(name: str, profile: str = DEFAULT_PROFILE) -> int | None:
+    """Return a named checkpoint ID from the config file profile."""
+    key = "checkpoint" if name == "timeline" else f"{name}_checkpoint"
+    val = _get_profile(_load_config_file(), profile).get(key)
+    return int(val) if val is not None else None
+
+
+def save_named_checkpoint(name: str, checkpoint_id: int, profile: str = DEFAULT_PROFILE) -> None:
+    """Save a named checkpoint ID to the config file profile."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     config = _load_config_file()
 
@@ -93,7 +105,8 @@ def save_checkpoint(checkpoint_id: int, profile: str = DEFAULT_PROFILE) -> None:
     if profile not in config or not isinstance(config.get(profile), dict):
         config[profile] = {}
 
-    config[profile]["checkpoint"] = checkpoint_id
+    key = "checkpoint" if name == "timeline" else f"{name}_checkpoint"
+    config[profile][key] = checkpoint_id
     _write_config(config)
 
 

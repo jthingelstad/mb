@@ -52,6 +52,20 @@ def _extract_username(author: dict) -> str:
     return author.get("name", "?")
 
 
+def _agent_post_line(item: dict) -> str:
+    """Render one post item for agent output."""
+    post_id = item.get("id", "?")
+    author = _extract_username(item.get("author", {}))
+    time = _relative_time(item.get("date_published", ""))
+    content = strip_html(item.get("content_html", "")).strip()
+    cats = item.get("tags", [])
+    if not cats:
+        cats = item.get("_microblog", {}).get("categories", []) if isinstance(item.get("_microblog"), dict) else []
+    cat_str = f" [{', '.join(cats)}]" if cats else ""
+    indent = "  " * item.get("depth", 0)
+    return f"{indent}[{post_id}] @{author} ({time}){cat_str}: {content}"
+
+
 def output_json(data: dict) -> None:
     """Print a JSON envelope to stdout."""
     json.dump(data, sys.stdout, indent=2)
@@ -66,6 +80,56 @@ def output_human(data: dict) -> None:
         return
 
     payload = data.get("data", {})
+
+    if isinstance(payload, dict) and payload.get("kind") == "heartbeat":
+        username = payload.get("username", "?")
+        mode = payload.get("mode", "bootstrap")
+        latest_id = payload.get("latest_id") or "none"
+        checkpoint = payload.get("checkpoint")
+        summary = f"Heartbeat for @{username} ({mode})"
+        if checkpoint is not None:
+            summary += f" checkpoint={checkpoint}"
+        summary += f" latest={latest_id}"
+        if payload.get("advanced"):
+            summary += " [saved]"
+        console.print(f"[bold]{summary}[/bold]")
+        console.print(
+            f"  Timeline: {payload.get('new_timeline_count', 0)} new"
+            f"  Mentions: {payload.get('new_mentions_count', 0)} new"
+        )
+        timeline_items = payload.get("timeline", [])
+        mention_items = payload.get("mentions", [])
+        if timeline_items:
+            table = Table(title="Timeline", show_header=True, header_style="bold")
+            table.add_column("ID", style="dim")
+            table.add_column("Author")
+            table.add_column("Content", max_width=60)
+            table.add_column("Date", style="dim")
+            for item in timeline_items:
+                table.add_row(
+                    str(item.get("id", "")),
+                    _extract_username(item.get("author", {})),
+                    strip_html(item.get("content_html", ""))[:60],
+                    item.get("date_published", "")[:10],
+                )
+            console.print(table)
+        if mention_items:
+            table = Table(title="Mentions", show_header=True, header_style="bold")
+            table.add_column("ID", style="dim")
+            table.add_column("Author")
+            table.add_column("Content", max_width=60)
+            table.add_column("Date", style="dim")
+            for item in mention_items:
+                table.add_row(
+                    str(item.get("id", "")),
+                    _extract_username(item.get("author", {})),
+                    strip_html(item.get("content_html", ""))[:60],
+                    item.get("date_published", "")[:10],
+                )
+            console.print(table)
+        if not timeline_items and not mention_items:
+            console.print("[dim]No new activity.[/dim]")
+        return
 
     # User lists (e.g. following, muting, blocking) — check before dict operations
     if isinstance(payload, list):
@@ -166,6 +230,34 @@ def output_agent(data: dict) -> None:
 
     payload = data.get("data", {})
 
+    if isinstance(payload, dict) and payload.get("kind") == "heartbeat":
+        parts = [
+            f"@{payload.get('username', '?')}",
+            f"heartbeat mode={payload.get('mode', 'bootstrap')}",
+        ]
+        if payload.get("checkpoint") is not None:
+            parts.append(f"checkpoint={payload['checkpoint']}")
+        if payload.get("latest_id") is not None:
+            parts.append(f"latest={payload['latest_id']}")
+        if payload.get("advanced"):
+            parts.append("saved=true")
+        print(" ".join(parts))
+        print(
+            f"new_timeline={payload.get('new_timeline_count', 0)} "
+            f"new_mentions={payload.get('new_mentions_count', 0)}"
+        )
+        timeline_items = payload.get("timeline", [])
+        mention_items = payload.get("mentions", [])
+        if timeline_items:
+            print("timeline:")
+            for item in timeline_items:
+                print(_agent_post_line(item))
+        if mention_items:
+            print("mentions:")
+            for item in mention_items:
+                print(_agent_post_line(item))
+        return
+
     # User lists (e.g. following, muting, blocking) — check before dict operations
     if isinstance(payload, list):
         for entry in payload:
@@ -199,17 +291,7 @@ def output_agent(data: dict) -> None:
     items = payload.get("items", [])
     if items:
         for item in items:
-            post_id = item.get("id", "?")
-            author = _extract_username(item.get("author", {}))
-            time = _relative_time(item.get("date_published", ""))
-            content = strip_html(item.get("content_html", "")).strip()
-            # Include categories if present (tags from normalized items, _microblog.categories from JSON API)
-            cats = item.get("tags", [])
-            if not cats:
-                cats = item.get("_microblog", {}).get("categories", []) if isinstance(item.get("_microblog"), dict) else []
-            cat_str = f" [{', '.join(cats)}]" if cats else ""
-            indent = "  " * item.get("depth", 0)
-            print(f"{indent}[{post_id}] @{author} ({time}){cat_str}: {content}")
+            print(_agent_post_line(item))
         return
 
     # Single result fallback

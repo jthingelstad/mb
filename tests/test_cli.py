@@ -46,6 +46,57 @@ def _mock_transport(routes: dict | None = None):
         if method == "GET" and path == "/posts/conversation":
             return httpx.Response(200, json=CONVERSATION_RESPONSE)
 
+        if method == "GET" and path == "/posts/all":
+            since_id = params.get("since_id")
+            items = [
+                {
+                    "id": "20003",
+                    "content_html": "<p>Newest timeline post</p>",
+                    "date_published": "2026-03-12T00:00:00+00:00",
+                    "author": {"name": "carol", "url": "https://micro.blog/carol"},
+                },
+                {
+                    "id": "20002",
+                    "content_html": "<p>Second timeline post</p>",
+                    "date_published": "2026-03-11T12:00:00+00:00",
+                    "author": {"name": "bob", "url": "https://micro.blog/bob"},
+                },
+                {
+                    "id": "20001",
+                    "content_html": "<p>Third timeline post</p>",
+                    "date_published": "2026-03-10T12:00:00+00:00",
+                    "author": {"name": "alice", "url": "https://micro.blog/alice"},
+                },
+            ]
+            if since_id is not None:
+                items = [item for item in items if int(item["id"]) > int(since_id)]
+            count = int(params.get("count", len(items)))
+            return httpx.Response(200, json={"items": items[:count]})
+
+        if method == "GET" and path == "/posts/mentions":
+            return httpx.Response(200, json={"items": [
+                {
+                    "id": "20004",
+                    "content_html": "<p>@testuser New mention</p>",
+                    "date_published": "2026-03-12T01:00:00+00:00",
+                    "author": {"name": "dave", "url": "https://micro.blog/dave"},
+                },
+                {
+                    "id": "19999",
+                    "content_html": "<p>@testuser Old mention</p>",
+                    "date_published": "2026-03-09T01:00:00+00:00",
+                    "author": {"name": "erin", "url": "https://micro.blog/erin"},
+                },
+            ]})
+
+        if method == "GET" and path == "/posts/check":
+            since_id = int(params.get("since_id", 0))
+            timeline_ids = [20003, 20002, 20001]
+            return httpx.Response(200, json={
+                "count": len([item_id for item_id in timeline_ids if item_id > since_id]),
+                "check_seconds": 20,
+            })
+
         if method == "GET" and path == "/posts/discover":
             return httpx.Response(200, json={"items": []})
 
@@ -364,6 +415,118 @@ class TestTimelineCheckpoint:
             data = json.loads(result.output)
             assert data["ok"] is False
             assert "no checkpoint" in data["error"].lower()
+
+
+class TestHeartbeat:
+    def test_heartbeat_bootstrap_snapshot(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "heartbeat", "--count", "2", "--mention-count", "1"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["kind"] == "heartbeat"
+        assert data["data"]["mode"] == "bootstrap"
+        assert data["data"]["new_timeline_count"] == 2
+        assert data["data"]["new_mentions_count"] == 2
+        assert [item["id"] for item in data["data"]["timeline"]] == ["20003", "20002"]
+        assert [item["id"] for item in data["data"]["mentions"]] == ["20004"]
+
+    def test_heartbeat_filters_since_saved_checkpoint(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text(
+            '[default]\n'
+            'token = "test-token"\n'
+            'username = "testuser"\n'
+            'heartbeat_checkpoint = 20002\n'
+        )
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "heartbeat"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["mode"] == "since-checkpoint"
+        assert data["data"]["checkpoint"] == 20002
+        assert data["data"]["new_timeline_count"] == 1
+        assert [item["id"] for item in data["data"]["timeline"]] == ["20003"]
+        assert data["data"]["new_mentions_count"] == 1
+        assert [item["id"] for item in data["data"]["mentions"]] == ["20004"]
+
+    def test_heartbeat_advance_saves_latest_seen_id(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "heartbeat", "--advance"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["advanced"] is True
+        saved = config_file.read_text()
+        assert 'heartbeat_checkpoint = 20004' in saved
+
+    def test_heartbeat_mentions_only_skips_timeline_items(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\nheartbeat_checkpoint = 20002\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "heartbeat", "--mentions-only"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["timeline"] == []
+        assert data["data"]["new_timeline_count"] == 0
+        assert [item["id"] for item in data["data"]["mentions"]] == ["20004"]
+
+    def test_heartbeat_advance_considers_unsampled_mentions(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "heartbeat", "--advance", "--mention-count", "0"])
+
+        assert result.exit_code == 0
+        saved = config_file.read_text()
+        assert 'heartbeat_checkpoint = 20004' in saved
 
 
 class TestBlogs:

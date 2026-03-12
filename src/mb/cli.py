@@ -7,7 +7,7 @@ import typer.core
 
 from mb import config
 from mb.api import MicroblogClient
-from mb.commands import blog, conversation, lookup, notes, post, timeline, user
+from mb.commands import blog, conversation, heartbeat as heartbeat_cmd, lookup, notes, post, timeline, user
 from mb.formatters import output
 
 
@@ -202,6 +202,24 @@ def discover_alias(
 ):
     """Show posts from a Micro.blog Discover collection."""
     timeline.discover(ctx, collection=collection)
+
+
+@app.command()
+def heartbeat(
+    ctx: typer.Context,
+    count: int = typer.Option(3, "--count", "-n", min=1, help="Maximum timeline items to include"),
+    mention_count: int = typer.Option(3, "--mention-count", min=0, help="Maximum mention items to include"),
+    mentions_only: bool = typer.Option(False, "--mentions-only", help="Only include mention/reply activity"),
+    advance: bool = typer.Option(False, "--advance", help="Save the newest seen post ID as the heartbeat checkpoint"),
+):
+    """Return a compact session-start snapshot for an agent."""
+    heartbeat_cmd.run(
+        ctx,
+        count=count,
+        mention_count=mention_count,
+        mentions_only=mentions_only,
+        advance=advance,
+    )
 
 
 # ── Conversation (top-level) ───────────────────────────────

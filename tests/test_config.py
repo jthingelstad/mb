@@ -4,7 +4,15 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from mb.config import get_token, get_username, get_checkpoint, save_checkpoint, save_config
+from mb.config import (
+    get_checkpoint,
+    get_named_checkpoint,
+    get_token,
+    get_username,
+    save_checkpoint,
+    save_config,
+    save_named_checkpoint,
+)
 
 
 class TestGetToken:
@@ -91,3 +99,14 @@ class TestCheckpoint:
             save_checkpoint(12345, profile="work")
             assert get_checkpoint(profile="work") == 12345
             assert get_checkpoint(profile="default") is None
+
+    def test_named_heartbeat_checkpoint(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "t"\nusername = "testuser"\n')
+        with patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            save_named_checkpoint("heartbeat", 20004)
+            assert get_named_checkpoint("heartbeat") == 20004
+            assert get_checkpoint() is None
