@@ -35,7 +35,7 @@ class _FlexibleGroup(typer.core.TyperGroup):
         return super().parse_args(ctx, front + rest)
 
 
-app = typer.Typer(cls=_FlexibleGroup, add_completion=False, no_args_is_help=True)
+app = typer.Typer(cls=_FlexibleGroup, add_completion=False, no_args_is_help=True, rich_markup_mode=None)
 app.add_typer(post.app, name="post", help="Publishing commands")
 app.add_typer(timeline.app, name="timeline", help="Reading/discovery commands")
 app.add_typer(user.app, name="user", help="Social graph commands")

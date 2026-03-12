@@ -7,7 +7,7 @@ import typer
 
 from mb.commands import get_client, get_format, get_username, output_or_exit, resolve_post_url, add_content_text
 
-app = typer.Typer(no_args_is_help=True)
+app = typer.Typer(no_args_is_help=True, rich_markup_mode=None)
 
 
 def _read_content(content: str) -> str:
