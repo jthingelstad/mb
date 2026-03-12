@@ -161,11 +161,24 @@ class TestPostNew:
         assert data["data"]["title"] == "My Title"
         assert data["data"]["content"] == "Body content"
 
+    def test_dry_run_with_content_option(self):
+        result = _invoke(["post", "new", "--dry-run", "--content", "Body content"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["content"] == "Body content"
+
     def test_dry_run_with_categories(self):
         result = _invoke(["post", "new", "--dry-run", "-c", "notes", "-c", "test", "Tagged post"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["data"]["categories"] == ["notes", "test"]
+
+    def test_conflicting_content_sources_error(self):
+        result = _invoke(["post", "new", "--dry-run", "--content", "Body content", "Positional content"])
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert "exactly one content source" in data["error"].lower()
 
 
 class TestGlobalFlagOrdering:
@@ -299,3 +312,27 @@ class TestBlogs:
         assert data["ok"] is True
         assert "blogs" in data["data"]
         assert len(data["data"]["blogs"]) == 2
+
+
+class TestNotesRecall:
+    def test_default_recall_uses_notes_category(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.api.MicroblogClient.get_blog_posts", return_value={"ok": True, "data": {"items": []}}) as get_blog_posts:
+            result = runner.invoke(app, ["notes", "recall"])
+
+        assert result.exit_code == 0
+        assert get_blog_posts.call_args.kwargs["category"] == "notes"
+
+    def test_search_without_category_searches_all_categories(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.api.MicroblogClient.search_blog", return_value={"ok": True, "data": {"items": []}}) as search_blog:
+            result = runner.invoke(app, ["notes", "recall", "--search", "keyword"])
+
+        assert result.exit_code == 0
+        assert search_blog.call_args.kwargs["category"] is None

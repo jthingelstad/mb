@@ -28,7 +28,7 @@ def add(
 @app.command("recall")
 def recall(
     ctx: typer.Context,
-    category: str = typer.Option("notes", "--category", "-c", help="Category to recall from"),
+    category: str | None = typer.Option(None, "--category", "-c", help="Category to recall from"),
     count: int = typer.Option(20, "--count", "-n", help="Number of notes to retrieve"),
     search: str = typer.Option(None, "--search", "-s", help="Search within notes"),
 ):
@@ -40,7 +40,7 @@ def recall(
     if search:
         result = client.search_blog(username, query=search, category=category)
     else:
-        result = client.get_blog_posts(username, count=count, category=category)
+        result = client.get_blog_posts(username, count=count, category=category or "notes")
 
     if result["ok"]:
         add_content_text(result["data"])

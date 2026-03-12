@@ -94,6 +94,7 @@ mb post new --draft                          Save as draft
 mb post new --file post.md                   Post from file (first # heading = title)
 mb post new --photo image.jpg --alt "desc"   Post with photo
 mb post new --category tag                   Add category (repeatable)
+mb post new --dry-run "Hello world"          Validate without posting
 mb post get <id>                             Fetch a post by ID or URL
 mb post edit <id> --content "New text"       Edit post content
 mb post edit <id> --title "New Title"        Edit post title
@@ -128,11 +129,12 @@ mb conversation <id>         Fetch full thread from root to leaf
 
 ```
 mb user show <username>
+mb user discover <username>
 mb user following <username>
 mb user follow <username>
 mb user unfollow <username>
 mb user is-following <username>
-mb user mute <username>
+mb user mute <username|keyword>
 mb user muting
 mb user unmute <id>
 mb user block <username>
@@ -155,8 +157,10 @@ Public supplementary notes stored as blog posts with categories. Notes augment a
 
 ```
 mb notes add "Important fact" --category preferences
+mb notes recall                              Recall from the default notes category
 mb notes recall --category preferences
-mb notes recall --search "keyword"
+mb notes recall --search "keyword"           Search all categories
+mb notes recall --search "keyword" -c prefs  Search within one category
 mb notes forget <id>         Delete a note by ID or URL
 mb notes categories
 mb notes guide               Print the full agent usage guide

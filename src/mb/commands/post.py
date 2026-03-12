@@ -40,7 +40,8 @@ def _parse_file(path: str) -> tuple[str | None, str]:
 @app.command()
 def new(
     ctx: typer.Context,
-    content: str = typer.Argument(None, help="Post content (use '-' for stdin)"),
+    content_arg: str = typer.Argument(None, help="Post content (use '-' for stdin)"),
+    content_opt: str = typer.Option(None, "--content", help="Post content (use '-' for stdin)"),
     title: str = typer.Option(None, "--title", "-t", help="Post title"),
     draft: bool = typer.Option(False, "--draft", help="Create as draft"),
     file: str = typer.Option(None, "--file", help="Read content from markdown file"),
@@ -56,6 +57,15 @@ def new(
     client = get_client(ctx)
 
     # Resolve content
+    provided_sources = sum([
+        file is not None,
+        content_opt is not None,
+        content_arg is not None,
+    ])
+    if provided_sources > 1:
+        output({"ok": False, "error": "Provide exactly one content source: positional content, --content, or --file", "code": 400}, fmt)
+        raise SystemExit(1)
+
     if file:
         try:
             file_title, file_content = _parse_file(file)
@@ -65,8 +75,10 @@ def new(
         if not title:
             title = file_title
         content = file_content
-    elif content:
-        content = _read_content(content)
+    elif content_opt is not None:
+        content = _read_content(content_opt)
+    elif content_arg is not None:
+        content = _read_content(content_arg)
     else:
         output({"ok": False, "error": "No content provided. Pass content, --file, or pipe via stdin with '-'", "code": 400}, fmt)
         raise SystemExit(1)
