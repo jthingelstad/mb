@@ -120,6 +120,9 @@ def _invoke(args, token="test-token", username="testuser", blog=None):
     """Invoke the CLI with mocked config and HTTP transport."""
     transport = _mock_transport()
     patches = _patch_config(token=token, username=username, blog=blog)
+    args = list(args)
+    if "--format" not in args and "--human" not in args:
+        args = ["--format", "json", *args]
     with patches[0], patches[1], patches[2], \
          patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
         return runner.invoke(app, args)
@@ -142,6 +145,16 @@ def _make_mock_init(transport):
 
 
 class TestWhoami:
+    def test_default_format_is_agent(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+            result = runner.invoke(app, ["whoami"])
+
+        assert result.exit_code == 0
+        assert "@testuser" in result.output
+
     def test_success_json(self):
         result = _invoke(["whoami"])
         assert result.exit_code == 0
@@ -180,7 +193,7 @@ class TestProfiles:
             {"name": "default", "username": "testuser", "blog": ""},
             {"name": "test", "username": "ottoai", "blog": "https://ottoai-test.micro.blog/"},
         ]):
-            result = runner.invoke(app, ["profiles"])
+            result = runner.invoke(app, ["--format", "json", "profiles"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["ok"] is True
@@ -321,14 +334,14 @@ class TestTimelineCheckpoint:
              patch("mb.config.CONFIG_DIR", config_dir), \
              patch("mb.config.CONFIG_FILE", config_file):
             # Save checkpoint
-            result = runner.invoke(app, ["timeline", "checkpoint", "85444200"])
+            result = runner.invoke(app, ["--format", "json", "timeline", "checkpoint", "85444200"])
             assert result.exit_code == 0
             data = json.loads(result.output)
             assert data["ok"] is True
             assert data["data"]["checkpoint"] == 85444200
 
             # Read checkpoint back
-            result = runner.invoke(app, ["timeline", "checkpoint"])
+            result = runner.invoke(app, ["--format", "json", "timeline", "checkpoint"])
             assert result.exit_code == 0
             data = json.loads(result.output)
             assert data["ok"] is True
@@ -346,7 +359,7 @@ class TestTimelineCheckpoint:
              patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
              patch("mb.config.CONFIG_DIR", config_dir), \
              patch("mb.config.CONFIG_FILE", config_file):
-            result = runner.invoke(app, ["timeline", "checkpoint"])
+            result = runner.invoke(app, ["--format", "json", "timeline", "checkpoint"])
             assert result.exit_code == 1
             data = json.loads(result.output)
             assert data["ok"] is False
@@ -370,7 +383,7 @@ class TestNotesRecall:
         with patches[0], patches[1], patches[2], \
              patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
              patch("mb.api.MicroblogClient.get_blog_posts", return_value={"ok": True, "data": {"items": []}}) as get_blog_posts:
-            result = runner.invoke(app, ["notes", "recall"])
+            result = runner.invoke(app, ["--format", "json", "notes", "recall"])
 
         assert result.exit_code == 0
         assert get_blog_posts.call_args.kwargs["category"] == "notes"
@@ -381,7 +394,7 @@ class TestNotesRecall:
         with patches[0], patches[1], patches[2], \
              patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
              patch("mb.api.MicroblogClient.search_blog", return_value={"ok": True, "data": {"items": []}}) as search_blog:
-            result = runner.invoke(app, ["notes", "recall", "--search", "keyword"])
+            result = runner.invoke(app, ["--format", "json", "notes", "recall", "--search", "keyword"])
 
         assert result.exit_code == 0
         assert search_blog.call_args.kwargs["category"] is None
@@ -395,13 +408,14 @@ class TestUserPipelines:
         assert data["ok"] is True
         assert len(data["data"]) == 2
 
-    def test_following_inactive_days_filters_accounts(self):
-        result = _invoke(["user", "following", "--inactive-days", "90"])
+    def test_lookup_users_last_post(self):
+        result = _invoke(["lookup", "users", "--last-post", "alice"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["ok"] is True
-        assert [entry["username"] for entry in data["data"]] == ["alice"]
-        assert data["data"][0]["is_inactive"] is True
+        assert [entry["username"] for entry in data["data"]["users"]] == ["alice"]
+        assert data["data"]["users"][0]["last_post_date"] == "2000-01-01T00:00:00+00:00"
+        assert data["data"]["users"][0]["last_post_content_text"] == "Alice post"
 
     def test_discover_lists_candidates(self):
         result = _invoke(["user", "discover"])
@@ -415,7 +429,7 @@ class TestUserPipelines:
         patches = _patch_config()
         with patches[0], patches[1], patches[2], \
              patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
-            result = runner.invoke(app, ["user", "unfollow", "-"], input="@alice\nbob\n")
+            result = runner.invoke(app, ["--format", "json", "user", "unfollow", "-"], input="@alice\nbob\n")
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -428,7 +442,7 @@ class TestUserPipelines:
         patches = _patch_config()
         with patches[0], patches[1], patches[2], \
              patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
-            result = runner.invoke(app, ["user", "follow", "-"], input="@carol\ndave\n")
+            result = runner.invoke(app, ["--format", "json", "user", "follow", "-"], input="@carol\ndave\n")
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -443,7 +457,7 @@ class TestUserPipelines:
              patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
             result = runner.invoke(
                 app,
-                ["user", "follow", "-"],
+                ["--format", "json", "user", "follow", "-"],
                 input="[12345] @carol (2h): Post text\n[67890] @carol (1h): Another post\n[22222] @dave (3h): Hello\n",
             )
 
@@ -453,21 +467,86 @@ class TestUserPipelines:
         assert data["data"]["count"] == 2
         assert [item["username"] for item in data["data"]["results"]] == ["carol", "dave"]
 
+    def test_follow_reads_dotted_usernames_from_stdin(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+            result = runner.invoke(
+                app,
+                ["--format", "json", "user", "follow", "-"],
+                input="[12345] @bapsi.micro.blog (2h): Post text\n[67890] @mitchw.bsky.social (1h): Another post\n",
+            )
 
-class TestTopLevelPipelineAliases:
-    def test_following_alias(self):
-        result = _invoke(["following", "--filter-days", "90"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert [item["username"] for item in data["data"]["results"]] == [
+            "bapsi.micro.blog",
+            "mitchw.bsky.social",
+        ]
+
+    def test_follow_single_username_uses_batch_envelope(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+            result = runner.invoke(app, ["--format", "json", "user", "follow", "carol"])
+
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["ok"] is True
-        assert [entry["username"] for entry in data["data"]] == ["alice"]
+        assert data["data"]["count"] == 1
+        assert data["data"]["results"][0]["username"] == "carol"
+
+    def test_lookup_users_collects_lookup_errors(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.commands.lookup._fetch_user_lookup", side_effect=[
+                 {"ok": True, "username": "alice", "last_post_date": "2000-01-01T00:00:00+00:00", "last_post_content_text": "Alice post"},
+                 {"ok": False, "username": "bob", "error": "lookup failed", "code": 503},
+             ]):
+            result = runner.invoke(app, ["--format", "json", "lookup", "users", "--last-post", "alice", "bob"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert [entry["username"] for entry in data["data"]["users"]] == ["alice"]
+        assert data["data"]["errors"][0]["username"] == "bob"
+
+    def test_lookup_users_reads_from_stdin(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+            result = runner.invoke(app, ["--format", "json", "lookup", "users", "--days-since-posting"], input="@alice\nbob\n")
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert [entry["username"] for entry in data["data"]["users"]] == ["alice", "bob"]
+        assert "inactive_days" in data["data"]["users"][0]
+
+    def test_lookup_users_requires_lookup_flag(self):
+        result = _invoke(["lookup", "users", "alice"])
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert "choose at least one lookup" in data["error"].lower()
+
+
+class TestTopLevelPipelineAliases:
+    def test_following_alias(self):
+        result = _invoke(["following"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert [entry["username"] for entry in data["data"]] == ["alice", "bob"]
 
     def test_unfollow_alias_reads_stdin(self):
         transport = _mock_transport()
         patches = _patch_config()
         with patches[0], patches[1], patches[2], \
              patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
-            result = runner.invoke(app, ["unfollow", "-"], input="@alice\nbob\n")
+            result = runner.invoke(app, ["--format", "json", "unfollow", "-"], input="@alice\nbob\n")
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -479,3 +558,10 @@ class TestTopLevelPipelineAliases:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["ok"] is True
+
+    def test_lookup_users_command(self):
+        result = _invoke(["lookup", "users", "--days-since-posting", "alice"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["users"][0]["username"] == "alice"

@@ -14,7 +14,7 @@ app = typer.Typer(no_args_is_help=True, rich_markup_mode=None)
 def _normalize_username(value: str) -> str:
     """Normalize a username from raw CLI or stdin input."""
     value = value.strip()
-    match = re.search(r"@([A-Za-z0-9_-]+)", value)
+    match = re.search(r"@([^\s:)\]]+)", value)
     if match:
         return match.group(1)
     token = value.split()[0] if value.split() else ""
@@ -64,25 +64,12 @@ def _resolve_batch_usernames(username: str) -> list[str]:
     return deduped
 
 
-def _run_batch_action(ctx: typer.Context, username: str, action_name: str, action_fn) -> None:
-    """Run follow/unfollow actions against one or many usernames."""
-    from mb.formatters import output
-
-    fmt = get_format(ctx)
-    client = get_client(ctx)
-    usernames = _resolve_batch_usernames(username)
-    if not usernames:
-        output({"ok": False, "error": "No usernames provided on stdin", "code": 400}, fmt)
-        raise SystemExit(1)
-
-    if len(usernames) == 1:
-        output_or_exit(action_fn(client, usernames[0]), fmt)
-        return
-
+def _build_action_response(action_name: str, usernames: list[str], action_fn) -> dict:
+    """Run an action against usernames and return a stable summary envelope."""
     results = []
     error_count = 0
     for name in usernames:
-        result = action_fn(client, name)
+        result = action_fn(name)
         results.append({
             "username": name,
             "ok": result.get("ok", False),
@@ -105,8 +92,27 @@ def _run_batch_action(ctx: typer.Context, username: str, action_name: str, actio
     if error_count:
         response["error"] = f"{error_count} {action_name} operation(s) failed"
         response["code"] = 400
+    return response
+
+
+def _run_batch_action(ctx: typer.Context, username: str, action_name: str, action_fn) -> None:
+    """Run follow/unfollow actions against one or many usernames."""
+    from mb.formatters import output
+
+    fmt = get_format(ctx)
+    client = get_client(ctx)
+    usernames = _resolve_batch_usernames(username)
+    if not usernames:
+        output({"ok": False, "error": "No usernames provided on stdin", "code": 400}, fmt)
+        raise SystemExit(1)
+
+    response = _build_action_response(
+        action_name,
+        usernames,
+        lambda value: action_fn(client, value),
+    )
     output(response, fmt)
-    if error_count:
+    if not response["ok"]:
         raise SystemExit(1)
 
 
@@ -120,33 +126,10 @@ def show(ctx: typer.Context, username: str = typer.Argument(..., help="Username 
 def following(
     ctx: typer.Context,
     username: str = typer.Argument(None, help="Username to check following list (defaults to current user)"),
-    inactive_days: int = typer.Option(None, "--inactive-days", "--filter-days", min=0, help="Only show accounts inactive for at least this many days"),
 ):
     """List who a user is following."""
-    fmt = get_format(ctx)
-    client = get_client(ctx)
     target_username = username or get_username(ctx)
-    result = client.get_following(target_username)
-    if result["ok"] and inactive_days is not None:
-        filtered = []
-        for entry in result["data"]:
-            if not isinstance(entry, dict) or not entry.get("username"):
-                continue
-            profile = client.get_user(entry["username"])
-            if not profile["ok"]:
-                output_or_exit(profile, fmt)
-            items = profile["data"].get("items", [])
-            last_post_date = items[0].get("date_published") if items else None
-            age_days = _days_since(last_post_date)
-            enriched = dict(entry)
-            enriched["last_post_date"] = last_post_date
-            enriched["inactive_days"] = age_days
-            enriched["has_posts"] = bool(items)
-            enriched["is_inactive"] = age_days is None or age_days >= inactive_days
-            if enriched["is_inactive"]:
-                filtered.append(enriched)
-        result = {"ok": True, "data": filtered}
-    output_or_exit(result, fmt)
+    output_or_exit(get_client(ctx).get_following(target_username), get_format(ctx))
 
 
 @app.command("discover")

@@ -67,7 +67,7 @@ Resolution order:
 
 1. Token: `MB_TOKEN`, then config profile token
 2. Blog destination: `--blog`, then `MB_BLOG`, then config profile blog
-3. Format: `--human`, then explicit `--format`, then `MB_FORMAT`, then `json`
+3. Format: `--human`, then explicit `--format`, then `MB_FORMAT`, then `agent`
 
 Legacy flat config is still supported for the default profile and auto-migrates on save.
 
@@ -92,6 +92,7 @@ mb blogs
 mb following
 mb follow <username|->
 mb unfollow <username|->
+mb lookup users --last-post
 mb discover --collection books
 mb conversation <id>
 mb poll --since <id> --interval 30
@@ -148,8 +149,6 @@ mb user discover
 mb user discover <username>
 mb user following
 mb user following <username>
-mb user following --inactive-days 90
-mb user following --filter-days 90
 mb user follow <username>
 mb user follow -
 mb user unfollow <username>
@@ -165,11 +164,20 @@ mb user unblock <id>
 
 User workflow notes:
 
-- `mb user following` defaults to the signed-in user
-- `mb user following --inactive-days N` and `--filter-days N` filter the follow list by most recent post date
+- `mb user following` defaults to the signed-in user and stays cheap
+- expensive per-user enrichment lives under `mb lookup users`
 - `mb user discover` defaults to the signed-in user and uses the social discover API
 - `mb user follow -` and `mb user unfollow -` read newline-delimited usernames from stdin
 - stdin parsing also accepts agent-format post lines and extracts `@username`
+
+Lookup commands:
+
+```text
+mb lookup users --last-post <username>
+mb lookup users --days-since-posting <username>
+mb user following | mb lookup users --last-post
+mb user following | mb lookup users --days-since-posting
+```
 
 Top-level convenience aliases:
 
@@ -212,7 +220,13 @@ Notes behavior:
 
 ## Output Contract
 
-Default output is JSON:
+Default output is agent mode:
+
+```text
+[12345] @username (2h): Post content here.
+```
+
+Use `--format json` for structured output:
 
 ```json
 { "ok": true, "data": { ... } }

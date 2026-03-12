@@ -56,23 +56,25 @@ mb --profile work post new "Posted from work blog"
 |-------------|--------------------------------------------|
 | `MB_TOKEN`  | Auth token (overrides config file)         |
 | `MB_BLOG`   | Default blog destination                   |
-| `MB_FORMAT` | Default output format: `json`, `human`, or `agent` |
+| `MB_FORMAT` | Default output format override: `agent`, `json`, or `human` |
 
 ## Output Formats
 
-All output is JSON by default:
+Agent output is the default:
+
+```text
+[12345] @you (2h): Hello from the command line
+```
+
+Use `--format json` for structured output:
 
 ```json
 { "ok": true, "data": { "id": "12345", "url": "https://you.micro.blog/2025/01/01/hello.html" } }
 ```
 
-Use `--human` for readable output, or `--format agent` for a condensed format optimized for LLM context windows:
+Use `--human` for readable output. `--format agent` is still available explicitly, but it is also the default.
 
-```
-[12345] @you (2h): Hello from the command line
-```
-
-Human users can set `export MB_FORMAT=human` in their shell profile.
+Human users can set `export MB_FORMAT=human` in their shell profile. Scripts that require machine-readable output should pass `--format json`.
 
 ## Commands
 
@@ -86,6 +88,7 @@ mb blogs                     List available blogs
 mb following                 List who you follow
 mb follow <username|->       Follow one or more users
 mb unfollow <username|->     Unfollow one or more users
+mb lookup users --last-post
 mb discover --collection books
 ```
 
@@ -138,8 +141,6 @@ mb user discover                Social suggestions from your network
 mb user discover <username>     Social suggestions seeded from another user's follows
 mb user following               List who you follow
 mb user following <username>    List who another user follows
-mb user following --inactive-days 90
-mb user following --filter-days 90
 mb user follow <username>
 mb user follow -                Read usernames from stdin, one per line
 mb user unfollow <username>
@@ -151,6 +152,15 @@ mb user unmute <id>
 mb user block <username>
 mb user blocking
 mb user unblock <id>
+```
+
+### Lookup
+
+```
+mb lookup users --last-post <username>
+mb lookup users --days-since-posting <username>
+mb user following | mb lookup users --last-post
+mb user following | mb lookup users --days-since-posting
 ```
 
 ### Blog
@@ -189,11 +199,11 @@ Tests use `httpx.MockTransport` — no live API calls required.
 Pipeline examples:
 
 ```bash
-# Find accounts you follow that have been inactive for 90+ days
-mb following --filter-days 90 --format agent
+# Inspect the latest post from everyone you follow
+mb user following | mb lookup users --last-post
 
-# Grep the list, then batch-unfollow from stdin
-mb following --filter-days 90 --format agent | grep somepattern | mb unfollow -
+# Add inactivity metadata, then filter and unfollow in a later pipeline stage
+mb user following | mb lookup users --days-since-posting | awk '{split($2,a,"="); if (a[2] > 90) print $1}' | mb unfollow -
 
 # Discover topic posts, filter them, then follow the authors mentioned in the post lines
 mb discover --collection books --format agent | grep topic | mb follow -

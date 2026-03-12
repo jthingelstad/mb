@@ -7,7 +7,7 @@ import typer.core
 
 from mb import config
 from mb.api import MicroblogClient
-from mb.commands import blog, conversation, notes, post, timeline, user
+from mb.commands import blog, conversation, lookup, notes, post, timeline, user
 from mb.formatters import output
 
 
@@ -39,6 +39,7 @@ app = typer.Typer(cls=_FlexibleGroup, add_completion=False, no_args_is_help=True
 app.add_typer(post.app, name="post", help="Publishing commands")
 app.add_typer(timeline.app, name="timeline", help="Reading/discovery commands")
 app.add_typer(user.app, name="user", help="Social graph commands")
+app.add_typer(lookup.app, name="lookup", help="Lookup additional data for pipeline inputs")
 app.add_typer(blog.app, name="blog", help="Read your own blog")
 app.add_typer(notes.app, name="notes", help="Supplementary notes on micro.blog")
 
@@ -47,7 +48,7 @@ app.add_typer(notes.app, name="notes", help="Supplementary notes on micro.blog")
 
 def get_format(ctx: typer.Context) -> str:
     """Resolve output format from --human flag or --format option."""
-    return ctx.obj.get("format", "json") if ctx.obj else "json"
+    return ctx.obj.get("format", "agent") if ctx.obj else "agent"
 
 
 def get_profile(ctx: typer.Context) -> str:
@@ -60,7 +61,8 @@ def get_client(ctx: typer.Context | None = None) -> MicroblogClient:
     profile = get_profile(ctx) if ctx else config.DEFAULT_PROFILE
     token = config.get_token(profile=profile)
     if not token:
-        output({"ok": False, "error": "No token configured. Run: mb auth <token>", "code": 401})
+        fmt = get_format(ctx) if ctx else "agent"
+        output({"ok": False, "error": "No token configured. Run: mb auth <token>", "code": 401}, fmt)
         raise SystemExit(1)
     blog_dest = None
     if ctx and ctx.obj:
@@ -75,7 +77,7 @@ def get_client(ctx: typer.Context | None = None) -> MicroblogClient:
 @app.callback()
 def main(
     ctx: typer.Context,
-    fmt: str = typer.Option("json", "--format", "-f", help="Output format: json | human | agent"),
+    fmt: str = typer.Option("agent", "--format", "-f", help="Output format: agent | json | human"),
     human: bool = typer.Option(False, "--human", help="Shortcut for --format human"),
     profile: str = typer.Option("default", "--profile", "-p", help="Config profile to use"),
     blog_name: str = typer.Option(None, "--blog", "-b", help="Blog destination (name or URL)"),
@@ -170,10 +172,9 @@ def blogs(ctx: typer.Context):
 def following_alias(
     ctx: typer.Context,
     username: str = typer.Argument(None, help="Username to check following list (defaults to current user)"),
-    inactive_days: int = typer.Option(None, "--inactive-days", "--filter-days", min=0, help="Only show accounts inactive for at least this many days"),
 ):
-    """List who you follow, optionally filtered by inactivity."""
-    user.following(ctx, username=username, inactive_days=inactive_days)
+    """List who you follow."""
+    user.following(ctx, username=username)
 
 
 @app.command("follow")

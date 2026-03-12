@@ -76,6 +76,26 @@ class TestOutputAgent:
         assert "@alice" in captured.out
         assert "@bob" in captured.out
 
+    def test_filtered_users_payload(self, capsys):
+        data = {"ok": True, "data": {
+            "users": [
+                {"username": "alice", "inactive_days": 90, "last_post_date": "2026-01-01T00:00:00+00:00", "last_post_content_text": "Hello world"},
+            ],
+            "errors": [],
+        }}
+        output_agent(data)
+        captured = capsys.readouterr()
+        assert "@alice inactive_days=90 last_post=2026-01-01: Hello world" in captured.out
+
+    def test_action_results_payload(self, capsys):
+        data = {"ok": True, "data": {
+            "action": "follow",
+            "results": [{"username": "alice", "ok": True}],
+        }}
+        output_agent(data)
+        captured = capsys.readouterr()
+        assert "@alice ok" in captured.out
+
 
 class TestOutputHuman:
     def test_list_payload(self, capsys):
@@ -94,3 +114,28 @@ class TestOutputHuman:
         output_human(data)
         captured = capsys.readouterr()
         assert "No items" in captured.out
+
+    def test_filtered_users_payload(self, capsys):
+        data = {"ok": True, "data": {
+            "users": [
+                {"username": "alice", "inactive_days": 90, "last_post_date": "2026-01-01T00:00:00+00:00", "last_post_content_text": "Hello world"},
+            ],
+            "errors": [],
+        }}
+        output_human(data)
+        captured = capsys.readouterr()
+        assert "@alice" in captured.out
+        assert "90d" in captured.out
+        assert "Hello world" in captured.out
+
+    def test_action_results_payload(self, capsys):
+        data = {"ok": True, "data": {
+            "action": "follow",
+            "ok_count": 1,
+            "error_count": 0,
+            "results": [{"username": "alice", "ok": True}],
+        }}
+        output_human(data)
+        captured = capsys.readouterr()
+        assert "follow" in captured.out.lower()
+        assert "@alice" in captured.out
