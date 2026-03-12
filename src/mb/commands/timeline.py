@@ -4,7 +4,7 @@ import typer
 
 from mb.commands import get_client, get_format, get_profile, output_or_exit, add_content_text
 
-app = typer.Typer(no_args_is_help=False, invoke_without_command=True)
+app = typer.Typer(no_args_is_help=False, invoke_without_command=True, rich_markup_mode=None)
 
 
 @app.callback(invoke_without_command=True)

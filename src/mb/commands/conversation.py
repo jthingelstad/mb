@@ -4,7 +4,7 @@ import typer
 
 from mb.commands import get_client, get_format, add_content_text
 
-app = typer.Typer(no_args_is_help=False, invoke_without_command=True)
+app = typer.Typer(no_args_is_help=False, invoke_without_command=True, rich_markup_mode=None)
 
 
 def _build_thread(items: list[dict]) -> list[dict]:
