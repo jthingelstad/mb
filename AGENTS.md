@@ -8,11 +8,21 @@ Guidance for coding agents working in `mb`.
 
 Core priorities:
 
-- JSON output by default
+- Agent output by default
 - No interactive prompts
 - Composable, pipeable commands
 - Clear structured errors
 - Minimal dependencies
+
+## Local Skills
+
+Project-local skills live under `skills/`:
+
+- `skills/mb-cli/SKILL.md`: core `mb` command usage and workflow guidance
+- `skills/mb-for-user-delegation/SKILL.md`: guidance for acting on behalf of a human user
+- `skills/mb-agent-blogger/SKILL.md`: guidance for an agent managing its own blog identity
+
+When working on skill-related requests, keep the command workflow in `mb-cli` separate from the social/voice rules in the two behavior skills.
 
 ## Repository Layout
 

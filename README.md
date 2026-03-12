@@ -2,7 +2,7 @@
 
 A command-line client for [micro.blog](https://micro.blog), designed for agent use.
 
-`mb` prioritizes machine-readable JSON output, composable commands, and zero interactive prompts — making it ideal as a tool for AI agents and scripts.
+`mb` prioritizes agent-friendly output, composable commands, and zero interactive prompts, making it a good fit for AI agents and scripts.
 
 ## Install
 
@@ -75,6 +75,68 @@ Use `--format json` for structured output:
 Use `--human` for readable output. `--format agent` is still available explicitly, but it is also the default.
 
 Human users can set `export MB_FORMAT=human` in their shell profile. Scripts that require machine-readable output should pass `--format json`.
+
+## Project Skills
+
+This repo includes local skills for agents using `mb`. The intended split is:
+
+- `mb-cli`: the base operational skill for using the CLI safely and effectively
+- `mb-for-user-delegation`: behavior guidance for agents acting on behalf of a human user's account
+- `mb-agent-blogger`: behavior guidance for agents posting on their own account as themselves
+
+Use `mb-cli` whenever an agent is operating the tool. Pair it with exactly one behavior skill depending on whose blog is being managed.
+
+Examples:
+
+```text
+Human-delegation case:
+  use mb-cli + mb-for-user-delegation
+  Example: an agent drafts, reviews, and manages follows for Jamie's account
+
+Agent-owned blog case:
+  use mb-cli + mb-agent-blogger
+  Example: Otto reads, posts, and curates follows for Otto's own blog
+```
+
+This separation keeps command usage, social norms, and authorship boundaries distinct. The CLI skill explains how to use `mb`; the behavior skills explain how to behave on micro.blog in each role.
+
+### OpenClaw Setup
+
+In OpenClaw, the simplest way to use multiple skills is to make them available in the specific agent's workspace. There is no special "compose these two skills" syntax. You give an agent access to both skill folders, and OpenClaw loads them together.
+
+Recommended layout:
+
+```text
+~/openclaw/workspaces/jamie-assistant/skills/
+  mb-cli/
+  mb-for-user-delegation/
+
+~/openclaw/workspaces/otto/skills/
+  mb-cli/
+  mb-agent-blogger/
+```
+
+One way to set that up from this repo is with symlinks:
+
+```bash
+mkdir -p ~/openclaw/workspaces/jamie-assistant/skills
+mkdir -p ~/openclaw/workspaces/otto/skills
+
+ln -s /Users/jamie/Projects/mb/skills/mb-cli ~/openclaw/workspaces/jamie-assistant/skills/mb-cli
+ln -s /Users/jamie/Projects/mb/skills/mb-for-user-delegation ~/openclaw/workspaces/jamie-assistant/skills/mb-for-user-delegation
+
+ln -s /Users/jamie/Projects/mb/skills/mb-cli ~/openclaw/workspaces/otto/skills/mb-cli
+ln -s /Users/jamie/Projects/mb/skills/mb-agent-blogger ~/openclaw/workspaces/otto/skills/mb-agent-blogger
+```
+
+This gives each agent the same core `mb-cli` skill, but only one behavior skill:
+
+- Jamie's delegate agent uses `mb-cli` plus `mb-for-user-delegation`
+- Otto uses `mb-cli` plus `mb-agent-blogger`
+
+Avoid loading both behavior skills into the same agent, because they imply different authority and voice rules.
+
+If you prefer shared install locations, OpenClaw can also load skills from global directories such as `~/.openclaw/skills` or paths listed in `skills.load.extraDirs`. Per-agent workspaces are still the better fit when different agents need different behavior.
 
 ## Commands
 
