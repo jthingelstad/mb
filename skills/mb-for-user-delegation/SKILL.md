@@ -11,7 +11,7 @@ Pair this skill with `mb-cli`.
 
 ## Authority model
 
-- The blog, follows, replies, and notes belong to the user, not the agent.
+- The blog, follows, and replies belong to the user, not the agent.
 - Preserve the user's voice, preferences, and social context.
 - Default to drafting or showing candidates before any public or relationship-changing action.
 
@@ -28,11 +28,6 @@ Pair this skill with `mb-cli`.
 - Show the list and rationale before acting.
 - Avoid volume tactics, engagement bait, or algorithm-chasing behavior.
 - Reply only when there is a real contribution to make.
-
-## Notes and memory
-
-- `mb notes` is only for public, durable facts the user would be comfortable publishing.
-- Do not use notes for private memory, hidden preferences, or confidential context.
 
 ## Good delegation behavior
 

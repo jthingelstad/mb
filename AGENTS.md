@@ -36,7 +36,6 @@ src/mb/commands/timeline.py   Timeline, discover, check, checkpoint
 src/mb/commands/conversation.py Conversation thread formatting
 src/mb/commands/user.py       User and social graph commands
 src/mb/commands/blog.py       Read own posts, categories, search
-src/mb/commands/notes.py      Public supplementary notes workflow
 tests/                        Unit and CLI integration tests
 ```
 
@@ -223,28 +222,6 @@ mb blog categories
 mb blog search "query"
 ```
 
-Notes commands:
-
-```text
-mb notes add "Important fact"
-mb notes add "Important fact" -c preferences -c notes
-mb notes add "Important fact" --title "Title"
-mb notes recall
-mb notes recall -c preferences
-mb notes recall --search "keyword"
-mb notes recall --search "keyword" -c preferences
-mb notes forget <id-or-url>
-mb notes categories
-mb notes guide
-```
-
-Notes behavior:
-
-- Notes are public blog posts
-- `mb notes recall` without `--search` defaults to category `notes`
-- `mb notes recall --search ...` searches across all categories unless `-c/--category` is provided
-- Notes supplement internal memory; they do not replace it
-
 ## Output Contract
 
 Default output is agent mode:
@@ -287,7 +264,7 @@ Run tests:
 .venv/bin/python -m pytest -q
 ```
 
-Testing notes:
+Testing guidance:
 
 - Test suite uses `httpx.MockTransport`
 - No live API calls should be added to tests

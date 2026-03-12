@@ -7,7 +7,7 @@ import typer.core
 
 from mb import config
 from mb.api import MicroblogClient
-from mb.commands import blog, conversation, heartbeat as heartbeat_cmd, lookup, notes, post, timeline, user
+from mb.commands import blog, conversation, heartbeat as heartbeat_cmd, lookup, post, timeline, user
 from mb.formatters import output
 
 
@@ -41,7 +41,6 @@ app.add_typer(timeline.app, name="timeline", help="Reading/discovery commands")
 app.add_typer(user.app, name="user", help="Social graph commands")
 app.add_typer(lookup.app, name="lookup", help="Lookup additional data for pipeline inputs")
 app.add_typer(blog.app, name="blog", help="Read your own blog")
-app.add_typer(notes.app, name="notes", help="Supplementary notes on micro.blog")
 
 # ── Global options ──────────────────────────────────────────
 

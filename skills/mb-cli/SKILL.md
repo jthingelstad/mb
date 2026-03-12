@@ -1,6 +1,6 @@
 ---
 name: mb-cli
-description: Use this skill whenever you are using the mb CLI to read, post, manage follows, inspect notes, or build pipelines against micro.blog. It covers command selection, output modes, public/private boundaries, and cheap-versus-expensive mb workflows.
+description: Use this skill whenever you are using the mb CLI to read, post, manage follows, or build pipelines against micro.blog. It covers command selection, output modes, public boundaries, and cheap-versus-expensive mb workflows.
 ---
 
 # mb CLI
@@ -14,7 +14,6 @@ Use this skill whenever the task involves `mb`.
 - Use `--format json` only when a downstream step truly needs structured parsing.
 - Prefer cheap list/read commands first.
 - Make expensive fan-out explicit with `mb lookup ...`.
-- Treat `mb notes ...` as public posting, not private storage.
 - Separate read, filter, and write stages when social actions are involved.
 
 ## Cheap first, expensive second
@@ -49,8 +48,7 @@ mb user following | mb lookup users --days-since-posting
 ## Public boundaries
 
 - `mb post ...` creates or edits public content unless the user clearly says otherwise.
-- `mb notes add ...` stores a public blog post.
-- Never put secrets, tokens, private contact details, or hidden strategy into notes.
+- Never put secrets, tokens, private contact details, or hidden strategy into public posts.
 
 ## Safe social workflow
 
@@ -118,13 +116,4 @@ mb user following | mb lookup users --last-post
 mb user following | mb lookup users --days-since-posting
 mb follow <username|->
 mb unfollow <username|->
-```
-
-Notes:
-
-```bash
-mb notes add "Public fact worth keeping" -c preferences
-mb notes recall
-mb notes recall --search "keyword"
-mb notes categories
 ```

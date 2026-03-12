@@ -238,21 +238,6 @@ mb blog categories           List categories
 mb blog search "query"       Search your posts
 ```
 
-### Notes
-
-Public supplementary notes stored as blog posts with categories. Notes augment an agent's internal memory — they are not a replacement for it.
-
-```
-mb notes add "Important fact" --category preferences
-mb notes recall                              Recall from the default notes category
-mb notes recall --category preferences
-mb notes recall --search "keyword"           Search all categories
-mb notes recall --search "keyword" -c prefs  Search within one category
-mb notes forget <id>         Delete a note by ID or URL
-mb notes categories
-mb notes guide               Print the full agent usage guide
-```
-
 ## Development
 
 ```bash
