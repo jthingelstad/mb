@@ -89,6 +89,10 @@ mb auth <token>
 mb whoami
 mb profiles
 mb blogs
+mb following
+mb follow <username|->
+mb unfollow <username|->
+mb discover --collection books
 mb conversation <id>
 mb poll --since <id> --interval 30
 ```
@@ -140,10 +144,16 @@ User commands:
 
 ```text
 mb user show <username>
+mb user discover
 mb user discover <username>
+mb user following
 mb user following <username>
+mb user following --inactive-days 90
+mb user following --filter-days 90
 mb user follow <username>
+mb user follow -
 mb user unfollow <username>
+mb user unfollow -
 mb user is-following <username>
 mb user mute <username-or-keyword>
 mb user muting
@@ -153,7 +163,20 @@ mb user blocking
 mb user unblock <id>
 ```
 
-`mb user discover` is currently an alias of `mb user show` at the API layer.
+User workflow notes:
+
+- `mb user following` defaults to the signed-in user
+- `mb user following --inactive-days N` and `--filter-days N` filter the follow list by most recent post date
+- `mb user discover` defaults to the signed-in user and uses the social discover API
+- `mb user follow -` and `mb user unfollow -` read newline-delimited usernames from stdin
+- stdin parsing also accepts agent-format post lines and extracts `@username`
+
+Top-level convenience aliases:
+
+- `mb following` delegates to `mb user following`
+- `mb follow` delegates to `mb user follow`
+- `mb unfollow` delegates to `mb user unfollow`
+- `mb discover` delegates to topic-based discover posts, equivalent to `mb timeline discover`
 
 Blog commands:
 

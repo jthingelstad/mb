@@ -83,6 +83,10 @@ mb auth <token>              Store and verify a token
 mb whoami                    Show current user info
 mb profiles                  List configured profiles
 mb blogs                     List available blogs
+mb following                 List who you follow
+mb follow <username|->       Follow one or more users
+mb unfollow <username|->     Unfollow one or more users
+mb discover --collection books
 ```
 
 ### Posting
@@ -114,6 +118,7 @@ mb timeline --count 50       Control result count
 mb timeline mentions         Your mentions
 mb timeline photos           Photo timeline
 mb timeline discover         Discover feed
+mb discover --collection books Topic discover feed alias
 mb timeline check --since <id>   Check for new posts
 mb timeline checkpoint           Print saved checkpoint ID
 mb timeline checkpoint <id>      Save checkpoint ID to config
@@ -129,10 +134,16 @@ mb conversation <id>         Fetch full thread from root to leaf
 
 ```
 mb user show <username>
-mb user discover <username>
-mb user following <username>
+mb user discover                Social suggestions from your network
+mb user discover <username>     Social suggestions seeded from another user's follows
+mb user following               List who you follow
+mb user following <username>    List who another user follows
+mb user following --inactive-days 90
+mb user following --filter-days 90
 mb user follow <username>
+mb user follow -                Read usernames from stdin, one per line
 mb user unfollow <username>
+mb user unfollow -              Read usernames from stdin, one per line
 mb user is-following <username>
 mb user mute <username|keyword>
 mb user muting
@@ -174,6 +185,22 @@ pytest
 ```
 
 Tests use `httpx.MockTransport` — no live API calls required.
+
+Pipeline examples:
+
+```bash
+# Find accounts you follow that have been inactive for 90+ days
+mb following --filter-days 90 --format agent
+
+# Grep the list, then batch-unfollow from stdin
+mb following --filter-days 90 --format agent | grep somepattern | mb unfollow -
+
+# Discover topic posts, filter them, then follow the authors mentioned in the post lines
+mb discover --collection books --format agent | grep topic | mb follow -
+
+# Social suggestions from your network remain available under user discover
+mb user discover --format agent
+```
 
 ## License
 

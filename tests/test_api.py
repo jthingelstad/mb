@@ -81,6 +81,11 @@ class TestUser:
         result = mock_client.get_following("testuser")
         assert result["ok"] is True
 
+    def test_get_user_discover(self, mock_client):
+        result = mock_client.get_user_discover("testuser")
+        assert result["ok"] is True
+        assert len(result["data"]) == 2
+
     def test_is_following(self, mock_client):
         result = mock_client.is_following("alice")
         assert result["ok"] is True

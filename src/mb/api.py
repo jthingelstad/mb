@@ -100,6 +100,10 @@ class MicroblogClient:
         resp = self._client.get(f"/users/following/{username}")
         return self._handle_response(resp)
 
+    def get_user_discover(self, username: str) -> dict:
+        resp = self._client.get(f"/users/discover/{username}")
+        return self._handle_response(resp)
+
     def is_following(self, username: str) -> dict:
         resp = self._client.get("/users/is_following", params={"username": username})
         return self._handle_response(resp)

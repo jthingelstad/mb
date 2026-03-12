@@ -46,12 +46,61 @@ def _mock_transport(routes: dict | None = None):
         if method == "GET" and path == "/posts/conversation":
             return httpx.Response(200, json=CONVERSATION_RESPONSE)
 
+        if method == "GET" and path == "/posts/discover":
+            return httpx.Response(200, json={"items": []})
+
+        if method == "GET" and path == "/posts/discover/books":
+            return httpx.Response(200, json={"items": [{
+                "id": 30001,
+                "content_html": "<p>Book post</p>",
+                "date_published": "2026-03-12T00:00:00+00:00",
+                "author": {"name": "carol", "url": "https://micro.blog/carol"},
+            }]})
+
+        if method == "GET" and path == "/posts/alice":
+            return httpx.Response(200, json={
+                "username": "alice",
+                "items": [{
+                    "id": 20001,
+                    "date_published": "2000-01-01T00:00:00+00:00",
+                    "content_html": "<p>Alice post</p>",
+                }],
+            })
+
+        if method == "GET" and path == "/posts/bob":
+            return httpx.Response(200, json={
+                "username": "bob",
+                "items": [{
+                    "id": 20002,
+                    "date_published": "2100-01-01T00:00:00+00:00",
+                    "content_html": "<p>Bob post</p>",
+                }],
+            })
+
         if method == "POST" and path == "/posts/reply":
             return httpx.Response(200, json={
                 "id": 103,
                 "url": "https://micro.blog/testuser/103",
                 "content_html": "<p>reply</p>",
             })
+
+        if method == "GET" and path == "/users/following/testuser":
+            return httpx.Response(200, json=[
+                {"username": "alice"},
+                {"username": "bob"},
+            ])
+
+        if method == "GET" and path == "/users/discover/testuser":
+            return httpx.Response(200, json=[
+                {"username": "carol"},
+                {"username": "dave"},
+            ])
+
+        if method == "POST" and path == "/users/follow":
+            return httpx.Response(200, json={})
+
+        if method == "POST" and path == "/users/unfollow":
+            return httpx.Response(200, json={})
 
         return httpx.Response(404, json={"error": "Not found"})
 
@@ -336,3 +385,97 @@ class TestNotesRecall:
 
         assert result.exit_code == 0
         assert search_blog.call_args.kwargs["category"] is None
+
+
+class TestUserPipelines:
+    def test_following_defaults_to_current_user(self):
+        result = _invoke(["user", "following"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert len(data["data"]) == 2
+
+    def test_following_inactive_days_filters_accounts(self):
+        result = _invoke(["user", "following", "--inactive-days", "90"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert [entry["username"] for entry in data["data"]] == ["alice"]
+        assert data["data"][0]["is_inactive"] is True
+
+    def test_discover_lists_candidates(self):
+        result = _invoke(["user", "discover"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert [entry["username"] for entry in data["data"]] == ["carol", "dave"]
+
+    def test_unfollow_reads_usernames_from_stdin(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+            result = runner.invoke(app, ["user", "unfollow", "-"], input="@alice\nbob\n")
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["count"] == 2
+        assert data["data"]["action"] == "unfollow"
+
+    def test_follow_reads_usernames_from_stdin(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+            result = runner.invoke(app, ["user", "follow", "-"], input="@carol\ndave\n")
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["count"] == 2
+        assert data["data"]["action"] == "follow"
+
+    def test_follow_reads_agent_format_lines_from_stdin(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+            result = runner.invoke(
+                app,
+                ["user", "follow", "-"],
+                input="[12345] @carol (2h): Post text\n[67890] @carol (1h): Another post\n[22222] @dave (3h): Hello\n",
+            )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["count"] == 2
+        assert [item["username"] for item in data["data"]["results"]] == ["carol", "dave"]
+
+
+class TestTopLevelPipelineAliases:
+    def test_following_alias(self):
+        result = _invoke(["following", "--filter-days", "90"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert [entry["username"] for entry in data["data"]] == ["alice"]
+
+    def test_unfollow_alias_reads_stdin(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+            result = runner.invoke(app, ["unfollow", "-"], input="@alice\nbob\n")
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["action"] == "unfollow"
+
+    def test_discover_alias(self):
+        result = _invoke(["discover", "--collection", "books"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True

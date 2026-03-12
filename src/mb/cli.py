@@ -166,6 +166,43 @@ def blogs(ctx: typer.Context):
         raise SystemExit(1)
 
 
+@app.command("following")
+def following_alias(
+    ctx: typer.Context,
+    username: str = typer.Argument(None, help="Username to check following list (defaults to current user)"),
+    inactive_days: int = typer.Option(None, "--inactive-days", "--filter-days", min=0, help="Only show accounts inactive for at least this many days"),
+):
+    """List who you follow, optionally filtered by inactivity."""
+    user.following(ctx, username=username, inactive_days=inactive_days)
+
+
+@app.command("follow")
+def follow_alias(
+    ctx: typer.Context,
+    username: str = typer.Argument(..., help="Username to follow, or '-' to read from stdin"),
+):
+    """Follow one or more users."""
+    user.follow(ctx, username=username)
+
+
+@app.command("unfollow")
+def unfollow_alias(
+    ctx: typer.Context,
+    username: str = typer.Argument(..., help="Username to unfollow, or '-' to read from stdin"),
+):
+    """Unfollow one or more users."""
+    user.unfollow(ctx, username=username)
+
+
+@app.command("discover")
+def discover_alias(
+    ctx: typer.Context,
+    collection: str = typer.Option(None, "--collection", "-c", help="Discover collection name (e.g. books, music)"),
+):
+    """Show posts from a Micro.blog Discover collection."""
+    timeline.discover(ctx, collection=collection)
+
+
 # ── Conversation (top-level) ───────────────────────────────
 
 app.add_typer(conversation.app, name="conversation", help="Thread fetching")

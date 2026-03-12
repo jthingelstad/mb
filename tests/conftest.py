@@ -41,6 +41,34 @@ TIMELINE_ITEMS = [
     },
 ]
 
+ALICE_ITEMS = [
+    {
+        "id": 20001,
+        "content_html": "<p>Alice post</p>",
+        "date_published": "2000-01-01T00:00:00+00:00",
+        "url": "https://alice.micro.blog/2000/01/01/alice.html",
+        "author": {
+            "name": "alice",
+            "url": "https://micro.blog/alice",
+            "avatar": "https://micro.blog/alice/avatar.jpg",
+        },
+    }
+]
+
+BOB_ITEMS = [
+    {
+        "id": 20002,
+        "content_html": "<p>Bob post</p>",
+        "date_published": "2100-01-01T00:00:00+00:00",
+        "url": "https://bob.micro.blog/2100/01/01/bob.html",
+        "author": {
+            "name": "bob",
+            "url": "https://micro.blog/bob",
+            "avatar": "https://micro.blog/bob/avatar.jpg",
+        },
+    }
+]
+
 MICROPUB_LIST_RESPONSE = {
     "items": [
         {
@@ -188,8 +216,23 @@ def mock_client():
             "avatar": "https://micro.blog/testuser/avatar.jpg",
             "items": TIMELINE_ITEMS[:1],
         }, {}),
+        ("GET", "/posts/alice"): (200, {
+            "username": "alice",
+            "name": "Alice",
+            "avatar": "https://micro.blog/alice/avatar.jpg",
+            "items": ALICE_ITEMS,
+        }, {}),
+        ("GET", "/posts/bob"): (200, {
+            "username": "bob",
+            "name": "Bob",
+            "avatar": "https://micro.blog/bob/avatar.jpg",
+            "items": BOB_ITEMS,
+        }, {}),
         ("GET", "/users/following/testuser"): (200, [
             {"username": "alice"}, {"username": "bob"},
+        ], {}),
+        ("GET", "/users/discover/testuser"): (200, [
+            {"username": "carol"}, {"username": "dave"},
         ], {}),
         ("POST", "/users/follow"): (200, {}, {}),
         ("POST", "/users/unfollow"): (200, {}, {}),
