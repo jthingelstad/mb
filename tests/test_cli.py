@@ -332,6 +332,43 @@ class TestPostNew:
         assert "exactly one content source" in data["error"].lower()
 
 
+class TestPostShort:
+    def test_dry_run_short_post(self):
+        result = _invoke(["post", "short", "--dry-run", "Small thought"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["short"] is True
+        assert data["data"]["char_count"] == len("Small thought")
+        assert data["data"]["warnings"] == []
+
+    def test_short_post_warns_when_over_300(self):
+        long_text = "x" * 301
+        result = _invoke(["post", "short", "--dry-run", long_text])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["short"] is True
+        assert "exceeds 300 characters" in data["data"]["warnings"][0]
+
+    def test_short_post_strict_300_errors(self):
+        long_text = "x" * 301
+        result = _invoke(["post", "short", "--strict-300", long_text])
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert "300 characters or fewer" in data["error"]
+
+    def test_short_post_rejects_two_photo_sources(self):
+        result = _invoke([
+            "post", "short", "--dry-run",
+            "--photo", "image.jpg",
+            "--photo-url", "https://cdn.example/test.jpg",
+            "hello",
+        ])
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert "one photo source" in data["error"].lower()
+
+
 class TestGlobalFlagOrdering:
     """Verify global flags work both before and after the subcommand."""
 

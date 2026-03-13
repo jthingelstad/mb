@@ -164,8 +164,10 @@ mb discover --collection books
 
 ```
 mb post new "Hello world"
+mb post short "A small thought"
 mb post new --title "My Post" --content "Body text"
 mb post new --draft                          Save as draft
+mb post short --strict-300 "A small thought"
 mb post new --file post.md                   Post from file (first # heading = title)
 mb post new --photo image.jpg --alt "desc"   Post with photo
 mb post new --photo-url https://...          Use a previously uploaded photo URL
@@ -300,6 +302,9 @@ mb discover --list
 # Upload an image first, then attach it to a post
 img=$(mb upload ./otter.jpg --format json | jq -r '.data.url')
 mb post new "An otter for today" --photo-url "$img"
+
+# Short-form publishing for conversational micro.blog posts
+mb post short "A small thought for today."
 ```
 
 ## License

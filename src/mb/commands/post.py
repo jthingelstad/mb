@@ -5,9 +5,10 @@ from pathlib import Path
 
 import typer
 
-from mb.commands import get_client, get_format, get_username, output_or_exit, resolve_post_url, add_content_text
+from mb.commands import add_content_text, extract_post_id, get_client, get_format, get_username, output_or_exit, resolve_post_url
 
 app = typer.Typer(no_args_is_help=True, rich_markup_mode=None)
+SHORT_POST_LIMIT = 300
 
 
 def _read_content(content: str) -> str:
@@ -37,6 +38,32 @@ def _parse_file(path: str) -> tuple[str | None, str]:
     return title, content
 
 
+def _resolve_new_post_content(content_arg: str | None, content_opt: str | None, file: str | None) -> tuple[str | None, str]:
+    """Resolve content inputs for a new post command."""
+    provided_sources = sum([
+        file is not None,
+        content_opt is not None,
+        content_arg is not None,
+    ])
+    if provided_sources > 1:
+        raise ValueError("Provide exactly one content source: positional content, --content, or --file")
+
+    if file:
+        file_title, file_content = _parse_file(file)
+        return file_title, file_content
+    if content_opt is not None:
+        return None, _read_content(content_opt)
+    if content_arg is not None:
+        return None, _read_content(content_arg)
+    raise ValueError("No content provided. Pass content, --file, or pipe via stdin with '-'")
+
+
+def _validate_photo_sources(photo: str | None, photo_url: str | None) -> None:
+    """Ensure only one photo source is provided."""
+    if photo and photo_url:
+        raise ValueError("Provide only one photo source: --photo or --photo-url")
+
+
 @app.command()
 def new(
     ctx: typer.Context,
@@ -46,6 +73,7 @@ def new(
     draft: bool = typer.Option(False, "--draft", help="Create as draft"),
     file: str = typer.Option(None, "--file", help="Read content from markdown file"),
     photo: str = typer.Option(None, "--photo", help="Path to photo to upload"),
+    photo_url: str = typer.Option(None, "--photo-url", help="Existing uploaded photo URL to attach"),
     alt: str = typer.Option(None, "--alt", help="Alt text for photo"),
     category: list[str] = typer.Option(None, "--category", "-c", help="Categories/tags for the post"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without posting"),
@@ -56,35 +84,22 @@ def new(
     fmt = get_format(ctx)
     client = get_client(ctx)
 
-    # Resolve content
-    provided_sources = sum([
-        file is not None,
-        content_opt is not None,
-        content_arg is not None,
-    ])
-    if provided_sources > 1:
-        output({"ok": False, "error": "Provide exactly one content source: positional content, --content, or --file", "code": 400}, fmt)
+    try:
+        file_title, content = _resolve_new_post_content(content_arg, content_opt, file)
+    except (ValueError, FileNotFoundError, OSError) as e:
+        output({"ok": False, "error": str(e), "code": 400}, fmt)
         raise SystemExit(1)
-
-    if file:
-        try:
-            file_title, file_content = _parse_file(file)
-        except (FileNotFoundError, OSError) as e:
-            output({"ok": False, "error": str(e), "code": 400}, fmt)
-            raise SystemExit(1)
-        if not title:
-            title = file_title
-        content = file_content
-    elif content_opt is not None:
-        content = _read_content(content_opt)
-    elif content_arg is not None:
-        content = _read_content(content_arg)
-    else:
-        output({"ok": False, "error": "No content provided. Pass content, --file, or pipe via stdin with '-'", "code": 400}, fmt)
-        raise SystemExit(1)
+    if not title:
+        title = file_title
 
     if not content:
         output({"ok": False, "error": "Content is empty", "code": 400}, fmt)
+        raise SystemExit(1)
+
+    try:
+        _validate_photo_sources(photo, photo_url)
+    except ValueError as e:
+        output({"ok": False, "error": str(e), "code": 400}, fmt)
         raise SystemExit(1)
 
     if dry_run:
@@ -93,13 +108,12 @@ def new(
             "title": title,
             "content": content,
             "draft": draft,
-            "photo": photo,
+            "photo": photo or photo_url,
             "categories": category,
         }}, fmt)
         return
 
     # Upload photo if provided
-    photo_url = None
     if photo:
         upload = client.micropub_upload_photo(photo, alt=alt)
         if not upload["ok"]:
@@ -114,6 +128,87 @@ def new(
         photo_url=photo_url,
         categories=category or None,
     )
+    output_or_exit(result, fmt)
+
+
+@app.command("short")
+def short(
+    ctx: typer.Context,
+    content_arg: str = typer.Argument(None, help="Short post content (use '-' for stdin)"),
+    content_opt: str = typer.Option(None, "--content", help="Short post content (use '-' for stdin)"),
+    draft: bool = typer.Option(False, "--draft", help="Create as draft"),
+    file: str = typer.Option(None, "--file", help="Read short post content from markdown file"),
+    photo: str = typer.Option(None, "--photo", help="Path to photo to upload"),
+    photo_url: str = typer.Option(None, "--photo-url", help="Existing uploaded photo URL to attach"),
+    alt: str = typer.Option(None, "--alt", help="Alt text for photo"),
+    category: list[str] = typer.Option(None, "--category", "-c", help="Categories/tags for the post"),
+    strict_300: bool = typer.Option(False, "--strict-300", help=f"Fail if content exceeds {SHORT_POST_LIMIT} characters"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without posting"),
+):
+    """Create a short-form post without a title."""
+    from mb.formatters import output
+
+    fmt = get_format(ctx)
+    client = get_client(ctx)
+
+    try:
+        file_title, content = _resolve_new_post_content(content_arg, content_opt, file)
+    except (ValueError, FileNotFoundError, OSError) as e:
+        output({"ok": False, "error": str(e), "code": 400}, fmt)
+        raise SystemExit(1)
+
+    if file_title:
+        content = f"# {file_title}\n\n{content}".strip()
+
+    if not content:
+        output({"ok": False, "error": "Content is empty", "code": 400}, fmt)
+        raise SystemExit(1)
+
+    try:
+        _validate_photo_sources(photo, photo_url)
+    except ValueError as e:
+        output({"ok": False, "error": str(e), "code": 400}, fmt)
+        raise SystemExit(1)
+
+    char_count = len(content)
+    warnings = []
+    if char_count > SHORT_POST_LIMIT:
+        if strict_300:
+            output({"ok": False, "error": f"Short posts must be {SHORT_POST_LIMIT} characters or fewer with --strict-300", "code": 400}, fmt)
+            raise SystemExit(1)
+        warnings.append(f"content exceeds {SHORT_POST_LIMIT} characters")
+
+    if dry_run:
+        output({"ok": True, "data": {
+            "dry_run": True,
+            "short": True,
+            "content": content,
+            "char_count": char_count,
+            "draft": draft,
+            "photo": photo or photo_url,
+            "categories": category,
+            "warnings": warnings,
+        }}, fmt)
+        return
+
+    if photo:
+        upload = client.micropub_upload_photo(photo, alt=alt)
+        if not upload["ok"]:
+            output(upload, fmt)
+            raise SystemExit(1)
+        photo_url = upload["data"]["url"]
+
+    result = client.micropub_create(
+        content=content,
+        draft=draft,
+        photo_url=photo_url,
+        categories=category or None,
+    )
+    if result.get("ok"):
+        result["data"]["short"] = True
+        result["data"]["char_count"] = char_count
+        if warnings:
+            result["data"]["warnings"] = warnings
     output_or_exit(result, fmt)
 
 
@@ -173,14 +268,7 @@ def _extract_post_id(post_id: str) -> int | None:
 
     Returns None if the ID cannot be extracted.
     """
-    if post_id.isdigit():
-        return int(post_id)
-    if post_id.startswith("http"):
-        # micro.blog URLs end with /username/id
-        last = post_id.rstrip("/").split("/")[-1]
-        if last.isdigit():
-            return int(last)
-    return None
+    return extract_post_id(post_id)
 
 
 @app.command()

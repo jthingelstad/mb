@@ -9,6 +9,7 @@ Guidance for coding agents working in `mb`.
 Core priorities:
 
 - Agent output by default
+- Agent output is the primary product surface
 - No interactive prompts
 - Composable, pipeable commands
 - Clear structured errors
@@ -120,9 +121,11 @@ Post commands:
 
 ```text
 mb post new "Hello"
+mb post short "Hello"
 mb post new --content "Hello"
 mb post new --file post.md
 mb post new --draft
+mb post short --strict-300 "Hello"
 mb post new --photo image.jpg --alt "desc"
 mb post new --photo-url https://...
 mb post new --category tag
@@ -140,6 +143,7 @@ mb post list --drafts
 Rules:
 
 - `mb post new` accepts exactly one content source: positional content, `--content`, or `--file`
+- `mb post short` is the short-form publishing path: no title, content only
 - `-` is accepted as content for stdin reads
 - Bare numeric IDs for `get/edit/delete` resolve through the conversation API
 - Replies use `POST /posts/reply`
@@ -253,6 +257,15 @@ mb blog search "query"
 
 ## Output Contract
 
+Output mode policy:
+
+- `agent` is the primary design target and the default runtime mode
+- `human` is a secondary review mode for readable inspection
+- `json` is a compatibility and integration layer, not the primary product surface
+- New features should be designed agent-first, then made readable in `human`, then exposed completely in `json`
+- Do not remove `json`, but also do not let `json` shape the UX of the CLI
+- Tests and external integrations may rely on `json`, so keep its envelopes stable when changing commands
+
 Default output is agent mode:
 
 ```text
@@ -278,6 +291,12 @@ Rate limits:
 ```
 
 `--format agent` prints condensed plain text for list-like reads and threaded conversations. `content_text` is added to JSON list results when `content_html` is present.
+
+Practical implications:
+
+- New command design should start from the best compact agent output
+- `human` can remain a thinner presentation layer over the same data
+- `json` should remain complete and deterministic, but it does not need to be the most prominent documented mode
 
 ## Development
 

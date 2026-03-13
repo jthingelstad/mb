@@ -106,8 +106,10 @@ Posting:
 
 ```bash
 mb post new "Text"
+mb post short "Short text"
 mb post new --content "Text"
 mb post new --file post.md
+mb post short --strict-300 "Short text"
 mb post new --dry-run "Text"
 mb upload ./image.jpg
 mb post new "Text" --photo-url https://cdn.micro.blog/...
