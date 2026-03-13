@@ -192,6 +192,25 @@ class TestOutputAgent:
         captured = capsys.readouterr()
         assert 'books label="Books & Reading" kind=topic emoji=":books:"' in captured.out
 
+    def test_checkpoints_payload(self, capsys):
+        output_agent({"ok": True, "data": {"kind": "checkpoints", "checkpoints": {
+            "heartbeat": 200,
+            "timeline": 100,
+        }}})
+        captured = capsys.readouterr()
+        assert "heartbeat checkpoint=200" in captured.out
+        assert "timeline checkpoint=100" in captured.out
+
+    def test_empty_checkpoints_payload(self, capsys):
+        output_agent({"ok": True, "data": {"kind": "checkpoints", "checkpoints": {}}})
+        captured = capsys.readouterr()
+        assert "checkpoints empty=true" in captured.out
+
+    def test_checkpoint_payload(self, capsys):
+        output_agent({"ok": True, "data": {"kind": "checkpoint", "name": "heartbeat", "checkpoint": 200}})
+        captured = capsys.readouterr()
+        assert "heartbeat checkpoint=200" in captured.out
+
 
 class TestOutputHuman:
     def test_list_payload(self, capsys):
@@ -268,6 +287,15 @@ class TestOutputHuman:
         captured = capsys.readouterr()
         assert "Catchup (bootstrap) latest=200" in captured.out
         assert "New: 2" in captured.out
+
+    def test_checkpoints_payload(self, capsys):
+        output_human({"ok": True, "data": {"kind": "checkpoints", "checkpoints": {
+            "heartbeat": 200,
+            "timeline": 100,
+        }}})
+        captured = capsys.readouterr()
+        assert "heartbeat" in captured.out
+        assert "200" in captured.out
 
     def test_upload_payload(self, capsys):
         output_human({"ok": True, "data": {"kind": "upload", "url": "https://cdn.example/test.jpg", "source": "file.jpg"}})

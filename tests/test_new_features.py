@@ -89,6 +89,9 @@ class TestExtractPostId:
     def test_microblog_url_trailing_slash(self):
         assert _extract_post_id("https://micro.blog/alice/100/") == 100
 
+    def test_agent_format_line(self):
+        assert _extract_post_id("[85444185] @alice (2h): Hello") == 85444185
+
     def test_blog_url_non_numeric(self):
         """Blog URLs with slug paths should return None."""
         assert _extract_post_id("https://alice.micro.blog/2026/02/28/hello.html") is None

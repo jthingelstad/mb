@@ -7,7 +7,7 @@ import typer.core
 
 from mb import config
 from mb.api import MicroblogClient
-from mb.commands import blog, catchup as catchup_cmd, conversation, heartbeat as heartbeat_cmd, inbox as inbox_cmd, lookup, post, timeline, upload as upload_cmd, user
+from mb.commands import blog, catchup as catchup_cmd, checkpoint, conversation, heartbeat as heartbeat_cmd, inbox as inbox_cmd, lookup, post, timeline, upload as upload_cmd, user
 from mb.formatters import output
 
 
@@ -41,6 +41,7 @@ app.add_typer(timeline.app, name="timeline", help="Reading/discovery commands")
 app.add_typer(user.app, name="user", help="Social graph commands")
 app.add_typer(lookup.app, name="lookup", help="Lookup additional data for pipeline inputs")
 app.add_typer(blog.app, name="blog", help="Read your own blog")
+app.add_typer(checkpoint.app, name="checkpoint", help="Manage saved checkpoints for agent workflows")
 
 # ── Global options ──────────────────────────────────────────
 
@@ -226,10 +227,22 @@ def heartbeat(
 def inbox(
     ctx: typer.Context,
     count: int = typer.Option(10, "--count", "-n", min=1, help="Maximum inbox items to include"),
+    reason: list[str] = typer.Option(None, "--reason", help="Filter inbox items by reason: mention or thread-reply"),
+    fresh_hours: int = typer.Option(None, "--fresh-hours", min=1, help="Only include items newer than this many hours"),
+    max_age_days: int = typer.Option(None, "--max-age-days", min=1, help="Only include items newer than this many days"),
+    all_items: bool = typer.Option(False, "--all", help="Ignore the saved inbox checkpoint and inspect all recent mentions"),
     advance: bool = typer.Option(False, "--advance", help="Save the newest seen inbox item as the inbox checkpoint"),
 ):
     """Return attention-oriented mention items for an agent."""
-    inbox_cmd.run(ctx, count=count, advance=advance)
+    inbox_cmd.run(
+        ctx,
+        count=count,
+        advance=advance,
+        reason=reason,
+        fresh_hours=fresh_hours,
+        max_age_days=max_age_days,
+        all_items=all_items,
+    )
 
 
 @app.command()

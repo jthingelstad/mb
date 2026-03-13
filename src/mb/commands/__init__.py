@@ -1,5 +1,7 @@
 """Shared helpers for command modules."""
 
+import re
+
 import typer
 
 
@@ -122,3 +124,22 @@ def _extract_author_username(author: dict) -> str:
         if parts:
             return parts[-1]
     return author.get("name", "")
+
+
+def extract_post_id(value: str) -> int | None:
+    """Extract a numeric post ID from raw CLI input, URLs, or agent-format lines."""
+    value = value.strip()
+    if not value:
+        return None
+    if value.isdigit():
+        return int(value)
+    bracket_match = re.search(r"\[(\d+)\]", value)
+    if bracket_match:
+        return int(bracket_match.group(1))
+    url_match = re.search(r"https?://\S+", value)
+    if url_match:
+        candidate = url_match.group(0).rstrip(").,!?]")
+        last = candidate.rstrip("/").split("/")[-1]
+        if last.isdigit():
+            return int(last)
+    return None

@@ -105,6 +105,7 @@ mb blogs
 mb heartbeat
 mb inbox
 mb catchup
+mb checkpoint list
 mb upload <path-or-url>
 mb following
 mb follow <username|->
@@ -163,6 +164,10 @@ mb timeline discover --list
 mb timeline check --since <id>
 mb timeline checkpoint
 mb timeline checkpoint <id>
+mb checkpoint list
+mb checkpoint get inbox
+mb checkpoint set heartbeat 12345
+mb checkpoint clear heartbeat
 ```
 
 User commands:
@@ -235,6 +240,9 @@ Inbox and catchup:
 
 ```text
 mb inbox
+mb inbox --reason thread-reply
+mb inbox --fresh-hours 24
+mb inbox --all
 mb inbox --advance
 mb catchup
 mb catchup --advance
@@ -243,6 +251,8 @@ mb catchup --advance
 - `mb inbox` is attention-oriented and built from recent mentions plus lightweight thread classification
 - `mb catchup` is bounded timeline reading with its own `catchup_checkpoint`
 - `mb inbox` uses its own `inbox_checkpoint`
+- `mb checkpoint ...` is the first-class cursor management surface for `timeline`, `heartbeat`, `inbox`, and `catchup`
+- selective inbox filters are for inspection, not cursor advancement; do not combine `mb inbox --advance` with `--reason`, `--fresh-hours`, or `--max-age-days`
 - `mb upload` accepts either a local image path or a remote image URL
 
 Blog commands:

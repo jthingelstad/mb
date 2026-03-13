@@ -120,6 +120,26 @@ def output_human(data: dict) -> None:
         console.print(table)
         return
 
+    if isinstance(payload, dict) and payload.get("kind") == "checkpoints":
+        checkpoints = payload.get("checkpoints", {})
+        if not checkpoints:
+            console.print("[dim]No checkpoints saved.[/dim]")
+            return
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Name")
+        table.add_column("Checkpoint", style="dim")
+        for name, checkpoint in sorted(checkpoints.items()):
+            table.add_row(name, str(checkpoint))
+        console.print(table)
+        return
+
+    if isinstance(payload, dict) and payload.get("kind") == "checkpoint":
+        if payload.get("cleared"):
+            console.print(f"[green]Cleared[/green] {payload.get('name', '')}")
+        else:
+            console.print(f"{payload.get('name', '')}: {payload.get('checkpoint', '')}")
+        return
+
     if isinstance(payload, dict) and payload.get("kind") == "heartbeat":
         username = payload.get("username", "?")
         mode = payload.get("mode", "bootstrap")
@@ -173,6 +193,18 @@ def output_human(data: dict) -> None:
             summary += " [saved]"
         console.print(f"[bold]{summary}[/bold]")
         console.print(f"  New: {payload.get('new_count', 0)}")
+        filters = payload.get("filters", {})
+        filter_bits = []
+        if filters.get("all"):
+            filter_bits.append("all=true")
+        if filters.get("reason"):
+            filter_bits.append(f"reason={','.join(filters['reason'])}")
+        if filters.get("fresh_hours") is not None:
+            filter_bits.append(f"fresh_hours={filters['fresh_hours']}")
+        if filters.get("max_age_days") is not None:
+            filter_bits.append(f"max_age_days={filters['max_age_days']}")
+        if filter_bits:
+            console.print(f"  Filters: {' '.join(filter_bits)}")
         items = payload.get("items", [])
         if not items:
             console.print("[dim]No inbox items.[/dim]")
@@ -325,6 +357,24 @@ def output_agent(data: dict) -> None:
             )
         return
 
+    if isinstance(payload, dict) and payload.get("kind") == "checkpoints":
+        checkpoints = payload.get("checkpoints", {})
+        if not checkpoints:
+            print("checkpoints empty=true")
+            return
+        for name, checkpoint in sorted(checkpoints.items()):
+            print(f"{name} checkpoint={checkpoint}")
+        return
+
+    if isinstance(payload, dict) and payload.get("kind") == "checkpoint":
+        line = payload.get("name", "")
+        if payload.get("cleared"):
+            line = f"{line} cleared=true"
+        elif payload.get("checkpoint") is not None:
+            line = f"{line} checkpoint={payload['checkpoint']}"
+        print(line.strip())
+        return
+
     if isinstance(payload, dict) and payload.get("kind") == "heartbeat":
         parts = [
             f"@{payload.get('username', '?')}",
@@ -379,7 +429,19 @@ def output_agent(data: dict) -> None:
         if payload.get("advanced"):
             parts.append("saved=true")
         print(" ".join(parts))
-        print(f"new_count={payload.get('new_count', 0)}")
+        detail_parts = [f"new_count={payload.get('new_count', 0)}"]
+        if payload.get("window_count") is not None:
+            detail_parts.append(f"window_count={payload['window_count']}")
+        filters = payload.get("filters", {})
+        if filters.get("all"):
+            detail_parts.append("all=true")
+        if filters.get("reason"):
+            detail_parts.append(f"reason={','.join(filters['reason'])}")
+        if filters.get("fresh_hours") is not None:
+            detail_parts.append(f"fresh_hours={filters['fresh_hours']}")
+        if filters.get("max_age_days") is not None:
+            detail_parts.append(f"max_age_days={filters['max_age_days']}")
+        print(" ".join(detail_parts))
         for entry in payload.get("items", []):
             print(f"{entry.get('reason', 'mention')}: {_agent_post_line(entry.get('item', {}))}")
         return

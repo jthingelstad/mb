@@ -55,6 +55,9 @@ mb user following | mb lookup users --days-since-posting
 - `mb inbox` is the reply-triage surface.
 - `mb catchup` is the bounded read-what-is-new surface.
 - `mb inbox`, `mb catchup`, and `mb heartbeat` each use separate checkpoints.
+- Use `mb checkpoint list` when cursor state is unclear.
+- Use `mb checkpoint clear <name>` to reset a stuck workflow cursor.
+- Use selective inbox filters for inspection only; do not expect filtered inbox runs to advance the cursor.
 - Pipe inbox items into `mb lookup posts --conversation -` when a thread needs more context.
 
 ## Public boundaries
@@ -89,9 +92,14 @@ mb heartbeat --advance
 mb heartbeat --mentions-only
 mb heartbeat --count 3 --mention-count 3
 mb inbox
+mb inbox --reason thread-reply
+mb inbox --fresh-hours 24
+mb inbox --all
 mb inbox --advance
 mb catchup
 mb catchup --advance
+mb checkpoint list
+mb checkpoint clear inbox
 ```
 
 Identity and config:

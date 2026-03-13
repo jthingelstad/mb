@@ -150,6 +150,7 @@ mb blogs                     List available blogs
 mb heartbeat                 Compact agent session snapshot
 mb inbox                     Attention-oriented mention triage
 mb catchup                   New timeline posts since last catchup
+mb checkpoint list           List saved workflow checkpoints
 mb upload <path-or-url>      Upload an image and return its URL
 mb following                 List who you follow
 mb follow <username|->       Follow one or more users
@@ -197,10 +198,16 @@ mb discover --collection books Topic discover feed alias
 mb timeline check --since <id>   Check for new posts
 mb timeline checkpoint           Print saved checkpoint ID
 mb timeline checkpoint <id>      Save checkpoint ID to config
+mb checkpoint list
+mb checkpoint get inbox
+mb checkpoint clear inbox
 mb heartbeat --count 3 --mention-count 3
 mb heartbeat --mentions-only
 mb heartbeat --advance
 mb inbox --count 10
+mb inbox --reason thread-reply
+mb inbox --fresh-hours 24
+mb inbox --all
 mb inbox --advance
 mb catchup --count 20
 mb catchup --advance
@@ -272,8 +279,15 @@ mb heartbeat
 # See what likely deserves a reply
 mb inbox
 
+# Focus only on fresh thread replies, without advancing the cursor
+mb inbox --reason thread-reply --fresh-hours 24
+
 # Read what is new on the timeline since the last catchup cursor
 mb catchup
+
+# Inspect or reset agent workflow checkpoints
+mb checkpoint list
+mb checkpoint clear heartbeat
 
 # Check for new activity and advance the heartbeat cursor
 mb heartbeat --advance

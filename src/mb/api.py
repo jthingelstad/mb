@@ -1,5 +1,7 @@
 """HTTP client for micro.blog. Accepts base_url override for testing."""
 
+from pathlib import Path
+
 import httpx
 
 DEFAULT_BASE_URL = "https://micro.blog"
@@ -316,24 +318,30 @@ class MicroblogClient:
         resp = self._client.get("/micropub", params={"q": "config"})
         return self._handle_response(resp)
 
-    def micropub_upload_photo(self, filepath: str, alt: str | None = None) -> dict:
-        """Upload a photo to the media endpoint, return its URL."""
-        try:
-            f = open(filepath, "rb")
-        except FileNotFoundError:
-            return {"ok": False, "error": f"File not found: {filepath}", "code": 400}
-        except OSError as e:
-            return {"ok": False, "error": f"Cannot read file: {filepath} ({e})", "code": 400}
-        with f:
-            files = {"file": (filepath.split("/")[-1], f)}
-            data = {}
-            if alt:
-                data["mp-photo-alt"] = alt
-            resp = self._client.post("/micropub/media", files=files, data=data)
+    def micropub_upload_bytes(self, filename: str, content: bytes,
+                              alt: str | None = None,
+                              content_type: str | None = None) -> dict:
+        """Upload image bytes to the media endpoint, return its URL."""
+        file_value = (filename, content, content_type) if content_type else (filename, content)
+        files = {"file": file_value}
+        data = {}
+        if alt:
+            data["mp-photo-alt"] = alt
+        resp = self._client.post("/micropub/media", files=files, data=data)
         if resp.status_code in (201, 202):
             location = resp.headers.get("Location", "")
             return {"ok": True, "data": {"url": location}}
         return self._handle_response(resp)
+
+    def micropub_upload_photo(self, filepath: str, alt: str | None = None) -> dict:
+        """Upload a photo to the media endpoint, return its URL."""
+        try:
+            content = Path(filepath).read_bytes()
+        except FileNotFoundError:
+            return {"ok": False, "error": f"File not found: {filepath}", "code": 400}
+        except OSError as e:
+            return {"ok": False, "error": f"Cannot read file: {filepath} ({e})", "code": 400}
+        return self.micropub_upload_bytes(filepath.split("/")[-1], content, alt=alt)
 
     def _handle_micropub_response(self, resp: httpx.Response) -> dict:
         """Handle Micropub responses (201 with Location header on success)."""

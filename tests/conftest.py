@@ -247,6 +247,11 @@ def mock_client():
             "",
             {"Location": "https://testuser.micro.blog/2026/02/28/newpost.html"},
         ),
+        ("POST", "/micropub/media"): (
+            201,
+            "",
+            {"Location": "https://cdn.micro.blog/photos/example-upload.jpg"},
+        ),
         ("GET", "/micropub", "source"): (200, MICROPUB_LIST_RESPONSE, {}),
         ("GET", "/micropub", "category"): (200, CATEGORIES_RESPONSE, {}),
         ("GET", "/micropub", "config"): (200, MICROPUB_CONFIG_RESPONSE, {}),

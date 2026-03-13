@@ -1,6 +1,7 @@
 """CLI integration tests exercising commands through Typer's CliRunner."""
 
 import json
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import httpx
@@ -10,6 +11,19 @@ from mb.cli import app
 from tests.conftest import VERIFY_RESPONSE, MICROPUB_LIST_RESPONSE, MICROPUB_CONFIG_RESPONSE, CONVERSATION_RESPONSE
 
 runner = CliRunner()
+
+
+class _FrozenDateTime:
+    @classmethod
+    def now(cls, tz=None):
+        current = datetime(2026, 3, 12, 12, 0, 0, tzinfo=timezone.utc)
+        if tz is None:
+            return current
+        return current.astimezone(tz)
+
+    @classmethod
+    def fromisoformat(cls, value):
+        return datetime.fromisoformat(value)
 
 
 def _mock_transport(routes: dict | None = None):
@@ -724,6 +738,141 @@ class TestInbox:
         assert result.exit_code == 0
         saved = config_file.read_text()
         assert 'inbox_checkpoint = 20004' in saved
+
+    def test_inbox_reason_filter(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "inbox", "--reason", "thread-reply"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["new_count"] == 1
+        assert data["data"]["filters"]["reason"] == ["thread-reply"]
+        assert [entry["item"]["id"] for entry in data["data"]["items"]] == ["20004"]
+
+    def test_inbox_fresh_hours_filter(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file), \
+             patch("mb.commands.inbox.datetime", _FrozenDateTime):
+            result = runner.invoke(app, ["--format", "json", "inbox", "--fresh-hours", "24"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["new_count"] == 1
+        assert data["data"]["filters"]["fresh_hours"] == 24
+        assert [entry["item"]["id"] for entry in data["data"]["items"]] == ["20004"]
+
+    def test_inbox_rejects_advance_with_selective_filters(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "inbox", "--reason", "thread-reply", "--advance"])
+
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert "cannot combine --advance" in data["error"].lower()
+
+
+class TestCheckpointCommands:
+    def test_checkpoint_list(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text(
+            '[default]\n'
+            'token = "test-token"\n'
+            'username = "testuser"\n'
+            'checkpoint = 100\n'
+            'heartbeat_checkpoint = 200\n'
+            'inbox_checkpoint = 300\n'
+        )
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "checkpoint", "list"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["checkpoints"] == {"timeline": 100, "heartbeat": 200, "inbox": 300}
+
+    def test_checkpoint_get_set_and_clear(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            set_result = runner.invoke(app, ["--format", "json", "checkpoint", "set", "heartbeat", "20004"])
+            get_result = runner.invoke(app, ["--format", "json", "checkpoint", "get", "heartbeat"])
+            clear_result = runner.invoke(app, ["--format", "json", "checkpoint", "clear", "heartbeat"])
+
+        assert set_result.exit_code == 0
+        assert get_result.exit_code == 0
+        assert clear_result.exit_code == 0
+        assert json.loads(set_result.output)["data"]["checkpoint"] == 20004
+        assert json.loads(get_result.output)["data"]["checkpoint"] == 20004
+        cleared = json.loads(clear_result.output)
+        assert cleared["data"]["cleared"] is True
+
+    def test_checkpoint_clear_all(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text(
+            '[default]\n'
+            'token = "test-token"\n'
+            'username = "testuser"\n'
+            'checkpoint = 100\n'
+            'heartbeat_checkpoint = 200\n'
+        )
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "checkpoint", "clear", "--all"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["cleared"] == 2
+        assert data["data"]["checkpoints"] == {}
 
 
 class TestBlogs:

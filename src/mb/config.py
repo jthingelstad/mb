@@ -92,6 +92,18 @@ def get_named_checkpoint(name: str, profile: str = DEFAULT_PROFILE) -> int | Non
     return int(val) if val is not None else None
 
 
+def list_named_checkpoints(profile: str = DEFAULT_PROFILE) -> dict[str, int]:
+    """Return all saved checkpoints for a profile."""
+    profile_data = _get_profile(_load_config_file(), profile)
+    checkpoints = {}
+    for key, value in profile_data.items():
+        if key == "checkpoint":
+            checkpoints["timeline"] = int(value)
+        elif key.endswith("_checkpoint"):
+            checkpoints[key.removesuffix("_checkpoint")] = int(value)
+    return checkpoints
+
+
 def save_named_checkpoint(name: str, checkpoint_id: int, profile: str = DEFAULT_PROFILE) -> None:
     """Save a named checkpoint ID to the config file profile."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -108,6 +120,34 @@ def save_named_checkpoint(name: str, checkpoint_id: int, profile: str = DEFAULT_
     key = "checkpoint" if name == "timeline" else f"{name}_checkpoint"
     config[profile][key] = checkpoint_id
     _write_config(config)
+
+
+def clear_named_checkpoint(name: str, profile: str = DEFAULT_PROFILE) -> bool:
+    """Remove one named checkpoint from the config file profile."""
+    config = _load_config_file()
+    profile_data = _get_profile(config, profile)
+    if not profile_data:
+        return False
+    key = "checkpoint" if name == "timeline" else f"{name}_checkpoint"
+    if key not in profile_data:
+        return False
+    del profile_data[key]
+    _write_config(config)
+    return True
+
+
+def clear_all_named_checkpoints(profile: str = DEFAULT_PROFILE) -> int:
+    """Remove all checkpoints from the config file profile."""
+    config = _load_config_file()
+    profile_data = _get_profile(config, profile)
+    if not profile_data:
+        return 0
+    keys = [key for key in profile_data if key == "checkpoint" or key.endswith("_checkpoint")]
+    for key in keys:
+        del profile_data[key]
+    if keys:
+        _write_config(config)
+    return len(keys)
 
 
 def save_config(token: str, username: str | None = None,

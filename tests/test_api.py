@@ -144,6 +144,18 @@ class TestMicropub:
         assert result["ok"] is True
         assert "items" in result["data"]
 
+    def test_upload_photo(self, mock_client, tmp_path):
+        photo = tmp_path / "test.jpg"
+        photo.write_bytes(b"image-bytes")
+        result = mock_client.micropub_upload_photo(str(photo))
+        assert result["ok"] is True
+        assert result["data"]["url"] == "https://cdn.micro.blog/photos/example-upload.jpg"
+
+    def test_upload_bytes(self, mock_client):
+        result = mock_client.micropub_upload_bytes("test.jpg", b"image-bytes", content_type="image/jpeg")
+        assert result["ok"] is True
+        assert result["data"]["url"] == "https://cdn.micro.blog/photos/example-upload.jpg"
+
 
 class TestRateLimiting:
     def test_rate_limited_response(self, rate_limited_client):
