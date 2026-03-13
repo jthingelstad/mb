@@ -31,11 +31,14 @@ src/mb/cli.py                 Typer entrypoint and global options
 src/mb/api.py                 HTTP client for micro.blog APIs
 src/mb/config.py              Config loading/saving and profile support
 src/mb/formatters.py          json | human | agent output modes
+src/mb/commands/catchup.py    New timeline posts since catchup checkpoint
+src/mb/commands/inbox.py      Attention-oriented mention triage
 src/mb/commands/post.py       Post create/get/edit/reply/delete/list
 src/mb/commands/timeline.py   Timeline, discover, check, checkpoint
 src/mb/commands/conversation.py Conversation thread formatting
 src/mb/commands/user.py       User and social graph commands
 src/mb/commands/blog.py       Read own posts, categories, search
+src/mb/commands/upload.py     Image uploads from local files or URLs
 tests/                        Unit and CLI integration tests
 ```
 
@@ -99,10 +102,15 @@ mb whoami
 mb profiles
 mb blogs
 mb heartbeat
+mb inbox
+mb catchup
+mb upload <path-or-url>
 mb following
 mb follow <username|->
 mb unfollow <username|->
 mb lookup users --last-post
+mb lookup posts --conversation
+mb discover --list
 mb discover --collection books
 mb conversation <id>
 mb poll --since <id> --interval 30
@@ -116,6 +124,7 @@ mb post new --content "Hello"
 mb post new --file post.md
 mb post new --draft
 mb post new --photo image.jpg --alt "desc"
+mb post new --photo-url https://...
 mb post new --category tag
 mb post new --dry-run "Hello"
 mb post get <id-or-url>
@@ -146,6 +155,7 @@ mb timeline mentions
 mb timeline photos
 mb timeline discover
 mb timeline discover --collection books
+mb timeline discover --list
 mb timeline check --since <id>
 mb timeline checkpoint
 mb timeline checkpoint <id>
@@ -176,6 +186,7 @@ User workflow notes:
 
 - `mb user following` defaults to the signed-in user and stays cheap
 - expensive per-user enrichment lives under `mb lookup users`
+- expensive per-post enrichment lives under `mb lookup posts`
 - `mb user discover` defaults to the signed-in user and uses the social discover API
 - `mb user follow -` and `mb user unfollow -` read newline-delimited usernames from stdin
 - stdin parsing also accepts agent-format post lines and extracts `@username`
@@ -185,8 +196,11 @@ Lookup commands:
 ```text
 mb lookup users --last-post <username>
 mb lookup users --days-since-posting <username>
+mb lookup posts --post <id-or-url>
+mb lookup posts --conversation <id-or-url>
 mb user following | mb lookup users --last-post
 mb user following | mb lookup users --days-since-posting
+mb inbox | mb lookup posts --conversation -
 ```
 
 Top-level convenience aliases:
@@ -195,6 +209,7 @@ Top-level convenience aliases:
 - `mb follow` delegates to `mb user follow`
 - `mb unfollow` delegates to `mb user unfollow`
 - `mb discover` delegates to topic-based discover posts, equivalent to `mb timeline discover`
+- `mb discover --list` prints the curated built-in Discover collection registry
 
 Heartbeat:
 
@@ -211,6 +226,20 @@ Heartbeat notes:
 - it uses a dedicated `heartbeat_checkpoint`, separate from `timeline checkpoint`
 - first run is a bounded bootstrap snapshot; later runs compare against the saved heartbeat checkpoint
 - `--advance` saves the newest seen post ID after the snapshot is generated
+
+Inbox and catchup:
+
+```text
+mb inbox
+mb inbox --advance
+mb catchup
+mb catchup --advance
+```
+
+- `mb inbox` is attention-oriented and built from recent mentions plus lightweight thread classification
+- `mb catchup` is bounded timeline reading with its own `catchup_checkpoint`
+- `mb inbox` uses its own `inbox_checkpoint`
+- `mb upload` accepts either a local image path or a remote image URL
 
 Blog commands:
 

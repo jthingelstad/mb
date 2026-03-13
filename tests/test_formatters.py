@@ -120,6 +120,78 @@ class TestOutputAgent:
         assert "new_timeline=2 new_mentions=1" in captured.out
         assert "timeline:" in captured.out
 
+    def test_catchup_payload(self, capsys):
+        data = {"ok": True, "data": {
+            "kind": "catchup",
+            "mode": "since-checkpoint",
+            "checkpoint": 100,
+            "latest_id": 200,
+            "advanced": True,
+            "new_count": 2,
+            "items": [{
+                "id": "200",
+                "content_html": "<p>Hello world</p>",
+                "date_published": "2026-03-12T12:00:00+00:00",
+                "author": {"name": "alice"},
+            }],
+        }}
+        output_agent(data)
+        captured = capsys.readouterr()
+        assert "catchup mode=since-checkpoint checkpoint=100 latest=200 saved=true" in captured.out
+        assert "new_count=2" in captured.out
+
+    def test_inbox_payload(self, capsys):
+        data = {"ok": True, "data": {
+            "kind": "inbox",
+            "username": "ottoai",
+            "mode": "bootstrap",
+            "checkpoint": None,
+            "latest_id": 200,
+            "advanced": False,
+            "new_count": 1,
+            "items": [{
+                "reason": "thread-reply",
+                "item": {
+                    "id": "200",
+                    "content_html": "<p>@ottoai Hello</p>",
+                    "date_published": "2026-03-12T12:00:00+00:00",
+                    "author": {"name": "alice"},
+                },
+            }],
+        }}
+        output_agent(data)
+        captured = capsys.readouterr()
+        assert "@ottoai inbox mode=bootstrap latest=200" in captured.out
+        assert "thread-reply:" in captured.out
+
+    def test_lookup_posts_payload(self, capsys):
+        data = {"ok": True, "data": {
+            "kind": "lookup_posts",
+            "posts": [{
+                "id": "200",
+                "author_username": "alice",
+                "date_published": "2026-03-12T12:00:00+00:00",
+                "content_text": "Hello world",
+                "conversation_items": [],
+            }],
+            "errors": [],
+        }}
+        output_agent(data)
+        captured = capsys.readouterr()
+        assert "[200] @alice date=2026-03-12: Hello world" in captured.out
+
+    def test_upload_payload(self, capsys):
+        output_agent({"ok": True, "data": {"kind": "upload", "url": "https://cdn.example/test.jpg", "source": "file.jpg"}})
+        captured = capsys.readouterr()
+        assert "https://cdn.example/test.jpg source=file.jpg" in captured.out
+
+    def test_discover_collections_payload(self, capsys):
+        output_agent({"ok": True, "data": {"kind": "discover_collections", "collections": [
+            {"slug": "books", "label": "Books & Reading", "kind": "topic", "emoji": ":books:"},
+        ]}})
+        captured = capsys.readouterr()
+        assert 'books label="Books & Reading" kind=topic emoji=":books:"' in captured.out
+
 
 class TestOutputHuman:
     def test_list_payload(self, capsys):
@@ -181,3 +253,32 @@ class TestOutputHuman:
         captured = capsys.readouterr()
         assert "Heartbeat for @ottoai (bootstrap) latest=200" in captured.out
         assert "Timeline: 2 new" in captured.out
+
+    def test_catchup_payload(self, capsys):
+        data = {"ok": True, "data": {
+            "kind": "catchup",
+            "mode": "bootstrap",
+            "checkpoint": None,
+            "latest_id": 200,
+            "advanced": False,
+            "new_count": 2,
+            "items": [],
+        }}
+        output_human(data)
+        captured = capsys.readouterr()
+        assert "Catchup (bootstrap) latest=200" in captured.out
+        assert "New: 2" in captured.out
+
+    def test_upload_payload(self, capsys):
+        output_human({"ok": True, "data": {"kind": "upload", "url": "https://cdn.example/test.jpg", "source": "file.jpg"}})
+        captured = capsys.readouterr()
+        assert "Uploaded" in captured.out
+        assert "file.jpg" in captured.out
+
+    def test_discover_collections_payload(self, capsys):
+        output_human({"ok": True, "data": {"kind": "discover_collections", "collections": [
+            {"slug": "books", "label": "Books & Reading", "kind": "topic", "emoji": ":books:"},
+        ]}})
+        captured = capsys.readouterr()
+        assert "books" in captured.out
+        assert "Books & Reading" in captured.out

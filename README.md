@@ -148,10 +148,15 @@ mb whoami                    Show current user info
 mb profiles                  List configured profiles
 mb blogs                     List available blogs
 mb heartbeat                 Compact agent session snapshot
+mb inbox                     Attention-oriented mention triage
+mb catchup                   New timeline posts since last catchup
+mb upload <path-or-url>      Upload an image and return its URL
 mb following                 List who you follow
 mb follow <username|->       Follow one or more users
 mb unfollow <username|->     Unfollow one or more users
 mb lookup users --last-post
+mb lookup posts --conversation
+mb discover --list
 mb discover --collection books
 ```
 
@@ -163,6 +168,7 @@ mb post new --title "My Post" --content "Body text"
 mb post new --draft                          Save as draft
 mb post new --file post.md                   Post from file (first # heading = title)
 mb post new --photo image.jpg --alt "desc"   Post with photo
+mb post new --photo-url https://...          Use a previously uploaded photo URL
 mb post new --category tag                   Add category (repeatable)
 mb post new --dry-run "Hello world"          Validate without posting
 mb post get <id>                             Fetch a post by ID or URL
@@ -184,6 +190,7 @@ mb timeline --count 50       Control result count
 mb timeline mentions         Your mentions
 mb timeline photos           Photo timeline
 mb timeline discover         Discover feed
+mb timeline discover --list  List curated Discover collections
 mb discover --collection books Topic discover feed alias
 mb timeline check --since <id>   Check for new posts
 mb timeline checkpoint           Print saved checkpoint ID
@@ -191,6 +198,10 @@ mb timeline checkpoint <id>      Save checkpoint ID to config
 mb heartbeat --count 3 --mention-count 3
 mb heartbeat --mentions-only
 mb heartbeat --advance
+mb inbox --count 10
+mb inbox --advance
+mb catchup --count 20
+mb catchup --advance
 ```
 
 ### Conversations
@@ -225,8 +236,11 @@ mb user unblock <id>
 ```
 mb lookup users --last-post <username>
 mb lookup users --days-since-posting <username>
+mb lookup posts --post <id-or-url>
+mb lookup posts --conversation <id-or-url>
 mb user following | mb lookup users --last-post
 mb user following | mb lookup users --days-since-posting
+mb inbox | mb lookup posts --conversation -
 ```
 
 ### Blog
@@ -253,8 +267,20 @@ Pipeline examples:
 # Start an agent session with a bounded snapshot
 mb heartbeat
 
+# See what likely deserves a reply
+mb inbox
+
+# Read what is new on the timeline since the last catchup cursor
+mb catchup
+
 # Check for new activity and advance the heartbeat cursor
 mb heartbeat --advance
+
+# Check the inbox and advance that cursor
+mb inbox --advance
+
+# Inspect the full thread behind an inbox item
+mb inbox --count 1 | mb lookup posts --conversation -
 
 # Inspect the latest post from everyone you follow
 mb user following | mb lookup users --last-post
@@ -267,6 +293,13 @@ mb discover --collection books --format agent | grep topic | mb follow -
 
 # Social suggestions from your network remain available under user discover
 mb user discover --format agent
+
+# Browse the curated Discover collections before choosing one
+mb discover --list
+
+# Upload an image first, then attach it to a post
+img=$(mb upload ./otter.jpg --format json | jq -r '.data.url')
+mb post new "An otter for today" --photo-url "$img"
 ```
 
 ## License

@@ -7,7 +7,7 @@ import typer.core
 
 from mb import config
 from mb.api import MicroblogClient
-from mb.commands import blog, conversation, heartbeat as heartbeat_cmd, lookup, post, timeline, user
+from mb.commands import blog, catchup as catchup_cmd, conversation, heartbeat as heartbeat_cmd, inbox as inbox_cmd, lookup, post, timeline, upload as upload_cmd, user
 from mb.formatters import output
 
 
@@ -198,9 +198,10 @@ def unfollow_alias(
 def discover_alias(
     ctx: typer.Context,
     collection: str = typer.Option(None, "--collection", "-c", help="Discover collection name (e.g. books, music)"),
+    list_collections: bool = typer.Option(False, "--list", help="List curated discover collections"),
 ):
     """Show posts from a Micro.blog Discover collection."""
-    timeline.discover(ctx, collection=collection)
+    timeline.discover(ctx, collection=collection, list_collections=list_collections)
 
 
 @app.command()
@@ -219,6 +220,36 @@ def heartbeat(
         mentions_only=mentions_only,
         advance=advance,
     )
+
+
+@app.command()
+def inbox(
+    ctx: typer.Context,
+    count: int = typer.Option(10, "--count", "-n", min=1, help="Maximum inbox items to include"),
+    advance: bool = typer.Option(False, "--advance", help="Save the newest seen inbox item as the inbox checkpoint"),
+):
+    """Return attention-oriented mention items for an agent."""
+    inbox_cmd.run(ctx, count=count, advance=advance)
+
+
+@app.command()
+def catchup(
+    ctx: typer.Context,
+    count: int = typer.Option(20, "--count", "-n", min=1, help="Maximum timeline items to include"),
+    advance: bool = typer.Option(False, "--advance", help="Save the newest seen post ID as the catchup checkpoint"),
+):
+    """Return new timeline items since the last catchup checkpoint."""
+    catchup_cmd.run(ctx, count=count, advance=advance)
+
+
+@app.command()
+def upload(
+    ctx: typer.Context,
+    source: str = typer.Argument(..., help="Local image path or remote image URL"),
+    alt: str = typer.Option(None, "--alt", help="Alt text for the uploaded image"),
+):
+    """Upload an image and return its hosted URL."""
+    upload_cmd.run(ctx, source=source, alt=alt)
 
 
 # ── Conversation (top-level) ───────────────────────────────

@@ -66,6 +66,23 @@ def _agent_post_line(item: dict) -> str:
     return f"{indent}[{post_id}] @{author} ({time}){cat_str}: {content}"
 
 
+def _human_post_table(console: Console, title: str, items: list[dict]) -> None:
+    """Render a list of posts as a table."""
+    table = Table(title=title, show_header=True, header_style="bold")
+    table.add_column("ID", style="dim")
+    table.add_column("Author")
+    table.add_column("Content", max_width=60)
+    table.add_column("Date", style="dim")
+    for item in items:
+        table.add_row(
+            str(item.get("id", "")),
+            _extract_username(item.get("author", {})),
+            strip_html(item.get("content_html", ""))[:60],
+            item.get("date_published", "")[:10],
+        )
+    console.print(table)
+
+
 def output_json(data: dict) -> None:
     """Print a JSON envelope to stdout."""
     json.dump(data, sys.stdout, indent=2)
@@ -80,6 +97,28 @@ def output_human(data: dict) -> None:
         return
 
     payload = data.get("data", {})
+
+    if isinstance(payload, dict) and payload.get("kind") == "upload":
+        console.print(f"[green]Uploaded[/green] {payload.get('url', '')}")
+        if payload.get("source"):
+            console.print(f"  Source: {payload['source']}")
+        return
+
+    if isinstance(payload, dict) and payload.get("kind") == "discover_collections":
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Slug")
+        table.add_column("Label")
+        table.add_column("Kind", style="dim")
+        table.add_column("Emoji", style="dim")
+        for entry in payload.get("collections", []):
+            table.add_row(
+                entry.get("slug", ""),
+                entry.get("label", ""),
+                entry.get("kind", ""),
+                entry.get("emoji", ""),
+            )
+        console.print(table)
+        return
 
     if isinstance(payload, dict) and payload.get("kind") == "heartbeat":
         username = payload.get("username", "?")
@@ -100,35 +139,74 @@ def output_human(data: dict) -> None:
         timeline_items = payload.get("timeline", [])
         mention_items = payload.get("mentions", [])
         if timeline_items:
-            table = Table(title="Timeline", show_header=True, header_style="bold")
-            table.add_column("ID", style="dim")
-            table.add_column("Author")
-            table.add_column("Content", max_width=60)
-            table.add_column("Date", style="dim")
-            for item in timeline_items:
-                table.add_row(
-                    str(item.get("id", "")),
-                    _extract_username(item.get("author", {})),
-                    strip_html(item.get("content_html", ""))[:60],
-                    item.get("date_published", "")[:10],
-                )
-            console.print(table)
+            _human_post_table(console, "Timeline", timeline_items)
         if mention_items:
-            table = Table(title="Mentions", show_header=True, header_style="bold")
-            table.add_column("ID", style="dim")
-            table.add_column("Author")
-            table.add_column("Content", max_width=60)
-            table.add_column("Date", style="dim")
-            for item in mention_items:
-                table.add_row(
-                    str(item.get("id", "")),
-                    _extract_username(item.get("author", {})),
-                    strip_html(item.get("content_html", ""))[:60],
-                    item.get("date_published", "")[:10],
-                )
-            console.print(table)
+            _human_post_table(console, "Mentions", mention_items)
         if not timeline_items and not mention_items:
             console.print("[dim]No new activity.[/dim]")
+        return
+
+    if isinstance(payload, dict) and payload.get("kind") == "catchup":
+        mode = payload.get("mode", "bootstrap")
+        checkpoint = payload.get("checkpoint")
+        latest_id = payload.get("latest_id") or "none"
+        summary = f"Catchup ({mode})"
+        if checkpoint is not None:
+            summary += f" checkpoint={checkpoint}"
+        summary += f" latest={latest_id}"
+        if payload.get("advanced"):
+            summary += " [saved]"
+        console.print(f"[bold]{summary}[/bold]")
+        console.print(f"  New: {payload.get('new_count', 0)}")
+        items = payload.get("items", [])
+        if items:
+            _human_post_table(console, "Posts", items)
+        else:
+            console.print("[dim]No new posts.[/dim]")
+        return
+
+    if isinstance(payload, dict) and payload.get("kind") == "inbox":
+        summary = f"Inbox for @{payload.get('username', '?')} ({payload.get('mode', 'bootstrap')})"
+        if payload.get("checkpoint") is not None:
+            summary += f" checkpoint={payload['checkpoint']}"
+        if payload.get("advanced"):
+            summary += " [saved]"
+        console.print(f"[bold]{summary}[/bold]")
+        console.print(f"  New: {payload.get('new_count', 0)}")
+        items = payload.get("items", [])
+        if not items:
+            console.print("[dim]No inbox items.[/dim]")
+            return
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Reason", style="dim")
+        table.add_column("Author")
+        table.add_column("Content", max_width=60)
+        table.add_column("Date", style="dim")
+        for entry in items:
+            item = entry.get("item", {})
+            table.add_row(
+                entry.get("reason", "mention"),
+                _extract_username(item.get("author", {})),
+                strip_html(item.get("content_html", ""))[:60],
+                item.get("date_published", "")[:10],
+            )
+        console.print(table)
+        return
+
+    if isinstance(payload, dict) and payload.get("kind") == "lookup_posts":
+        posts = payload.get("posts", [])
+        errors = payload.get("errors", [])
+        if not posts and not errors:
+            console.print("[dim]No items.[/dim]")
+            return
+        for entry in posts:
+            author = entry.get("author_username") or "?"
+            content = entry.get("content_text", "")
+            console.print(f"@{author} [{entry.get('id', '?')}] {content}")
+            for item in entry.get("conversation_items", []):
+                console.print(f"  {_agent_post_line(item)}")
+        for entry in errors:
+            console.print(f"  {entry.get('identifier', '?')} error={entry.get('error', 'lookup error')}")
         return
 
     # User lists (e.g. following, muting, blocking) — check before dict operations
@@ -230,6 +308,23 @@ def output_agent(data: dict) -> None:
 
     payload = data.get("data", {})
 
+    if isinstance(payload, dict) and payload.get("kind") == "upload":
+        line = payload.get("url", "")
+        if payload.get("source"):
+            line = f"{line} source={payload['source']}"
+        print(line)
+        return
+
+    if isinstance(payload, dict) and payload.get("kind") == "discover_collections":
+        for entry in payload.get("collections", []):
+            print(
+                f"{entry.get('slug', '')} "
+                f"label={json.dumps(entry.get('label', ''))} "
+                f"kind={entry.get('kind', '')} "
+                f"emoji={json.dumps(entry.get('emoji', ''))}"
+            )
+        return
+
     if isinstance(payload, dict) and payload.get("kind") == "heartbeat":
         parts = [
             f"@{payload.get('username', '?')}",
@@ -256,6 +351,55 @@ def output_agent(data: dict) -> None:
             print("mentions:")
             for item in mention_items:
                 print(_agent_post_line(item))
+        return
+
+    if isinstance(payload, dict) and payload.get("kind") == "catchup":
+        parts = [f"catchup mode={payload.get('mode', 'bootstrap')}"]
+        if payload.get("checkpoint") is not None:
+            parts.append(f"checkpoint={payload['checkpoint']}")
+        if payload.get("latest_id") is not None:
+            parts.append(f"latest={payload['latest_id']}")
+        if payload.get("advanced"):
+            parts.append("saved=true")
+        print(" ".join(parts))
+        print(f"new_count={payload.get('new_count', 0)}")
+        for item in payload.get("items", []):
+            print(_agent_post_line(item))
+        return
+
+    if isinstance(payload, dict) and payload.get("kind") == "inbox":
+        parts = [
+            f"@{payload.get('username', '?')}",
+            f"inbox mode={payload.get('mode', 'bootstrap')}",
+        ]
+        if payload.get("checkpoint") is not None:
+            parts.append(f"checkpoint={payload['checkpoint']}")
+        if payload.get("latest_id") is not None:
+            parts.append(f"latest={payload['latest_id']}")
+        if payload.get("advanced"):
+            parts.append("saved=true")
+        print(" ".join(parts))
+        print(f"new_count={payload.get('new_count', 0)}")
+        for entry in payload.get("items", []):
+            print(f"{entry.get('reason', 'mention')}: {_agent_post_line(entry.get('item', {}))}")
+        return
+
+    if isinstance(payload, dict) and payload.get("kind") == "lookup_posts":
+        for entry in payload.get("posts", []):
+            author = entry.get("author_username") or "?"
+            parts = [f"[{entry.get('id', '?')}] @{author}"]
+            if entry.get("date_published"):
+                parts.append(f"date={entry['date_published'][:10]}")
+            line = " ".join(parts)
+            if entry.get("content_text"):
+                line = f"{line}: {entry['content_text']}"
+            print(line)
+            if entry.get("conversation_items"):
+                print("conversation:")
+                for item in entry["conversation_items"]:
+                    print(_agent_post_line(item))
+        for entry in payload.get("errors", []):
+            print(f"{entry.get('identifier', '?')} error={entry.get('error', 'lookup_error')}")
         return
 
     # User lists (e.g. following, muting, blocking) — check before dict operations

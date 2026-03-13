@@ -37,6 +37,12 @@ def _mock_transport(routes: dict | None = None):
                 return httpx.Response(200, json={"categories": ["journal", "reference"]})
             return httpx.Response(200, json=MICROPUB_LIST_RESPONSE)
 
+        if method == "POST" and path == "/micropub/media":
+            return httpx.Response(
+                201, text="",
+                headers={"Location": "https://cdn.micro.blog/photos/test-upload.jpg"},
+            )
+
         if method == "POST" and path == "/micropub":
             return httpx.Response(
                 201, text="",
@@ -44,6 +50,38 @@ def _mock_transport(routes: dict | None = None):
             )
 
         if method == "GET" and path == "/posts/conversation":
+            if params.get("id") == "20004":
+                return httpx.Response(200, json={"items": [
+                    {
+                        "id": "20003",
+                        "content_html": "<p>My original post</p>",
+                        "date_published": "2026-03-12T00:00:00+00:00",
+                        "url": "https://micro.blog/testuser/20003",
+                        "author": {"name": "testuser", "url": "https://micro.blog/testuser", "_microblog": {"username": "testuser"}},
+                        "_microblog": {},
+                    },
+                    {
+                        "id": "20004",
+                        "content_html": "<p>@testuser New mention</p>",
+                        "date_published": "2026-03-12T01:00:00+00:00",
+                        "url": "https://micro.blog/dave/20004",
+                        "author": {"name": "dave", "url": "https://micro.blog/dave", "_microblog": {"username": "dave"}},
+                        "_microblog": {"reply_to_id": "20003"},
+                    },
+                ]})
+            if params.get("id") in {"20001", "20002", "20003"}:
+                post_id = params.get("id")
+                author = {"20001": "alice", "20002": "bob", "20003": "carol"}[post_id]
+                return httpx.Response(200, json={"items": [
+                    {
+                        "id": post_id,
+                        "content_html": f"<p>Post {post_id}</p>",
+                        "date_published": "2026-03-12T00:00:00+00:00",
+                        "url": f"https://micro.blog/{author}/{post_id}",
+                        "author": {"name": author, "url": f"https://micro.blog/{author}", "_microblog": {"username": author}},
+                        "_microblog": {},
+                    }
+                ]})
             return httpx.Response(200, json=CONVERSATION_RESPONSE)
 
         if method == "GET" and path == "/posts/all":
@@ -529,6 +567,128 @@ class TestHeartbeat:
         assert 'heartbeat_checkpoint = 20004' in saved
 
 
+class TestCatchup:
+    def test_catchup_bootstrap_snapshot(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "catchup", "--count", "2"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["kind"] == "catchup"
+        assert data["data"]["mode"] == "bootstrap"
+        assert data["data"]["new_count"] == 2
+        assert [item["id"] for item in data["data"]["items"]] == ["20003", "20002"]
+
+    def test_catchup_filters_since_saved_checkpoint(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\ncatchup_checkpoint = 20002\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "catchup"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["mode"] == "since-checkpoint"
+        assert data["data"]["checkpoint"] == 20002
+        assert data["data"]["new_count"] == 1
+        assert [item["id"] for item in data["data"]["items"]] == ["20003"]
+
+    def test_catchup_advance_saves_latest_seen_id(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "catchup", "--advance", "--count", "1"])
+
+        assert result.exit_code == 0
+        saved = config_file.read_text()
+        assert 'catchup_checkpoint = 20003' in saved
+
+
+class TestInbox:
+    def test_inbox_bootstrap_snapshot(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "inbox", "--count", "1"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["kind"] == "inbox"
+        assert data["data"]["new_count"] == 2
+        assert data["data"]["items"][0]["reason"] == "thread-reply"
+        assert data["data"]["items"][0]["thread_has_self_post"] is True
+
+    def test_inbox_filters_since_saved_checkpoint(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\ninbox_checkpoint = 20003\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "inbox"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["new_count"] == 1
+        assert [entry["item"]["id"] for entry in data["data"]["items"]] == ["20004"]
+
+    def test_inbox_advance_saves_latest_seen_id(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "inbox", "--advance"])
+
+        assert result.exit_code == 0
+        saved = config_file.read_text()
+        assert 'inbox_checkpoint = 20004' in saved
+
+
 class TestBlogs:
     def test_list_blogs(self):
         result = _invoke(["blogs"])
@@ -671,6 +831,45 @@ class TestUserPipelines:
         data = json.loads(result.output)
         assert "choose at least one lookup" in data["error"].lower()
 
+    def test_lookup_posts_post(self):
+        result = _invoke(["lookup", "posts", "--post", "20003"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["posts"][0]["id"] == "20003"
+        assert data["data"]["posts"][0]["content_text"] == "Post 20003"
+
+    def test_lookup_posts_conversation_from_stdin_agent_lines(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+            result = runner.invoke(
+                app,
+                ["--format", "json", "lookup", "posts", "--conversation", "-"],
+                input="[20004] @dave (1h): @testuser New mention\n",
+            )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["posts"][0]["id"] == "20004"
+        assert data["data"]["posts"][0]["conversation_count"] == 2
+
+    def test_lookup_posts_ignores_non_identifier_stdin_lines(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+            result = runner.invoke(
+                app,
+                ["--format", "json", "lookup", "posts", "--conversation", "-"],
+                input="@testuser inbox mode=bootstrap latest=20004\nnew_count=1\nthread-reply: [20004] @dave (1h): @testuser New mention\n",
+            )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert len(data["data"]["posts"]) == 1
+        assert data["data"]["errors"] == []
+
 
 class TestTopLevelPipelineAliases:
     def test_following_alias(self):
@@ -698,9 +897,50 @@ class TestTopLevelPipelineAliases:
         data = json.loads(result.output)
         assert data["ok"] is True
 
+    def test_discover_list(self):
+        result = _invoke(["discover", "--list"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["kind"] == "discover_collections"
+        assert any(entry["slug"] == "books" for entry in data["data"]["collections"])
+
+    def test_discover_unknown_collection_errors(self):
+        result = _invoke(["discover", "--collection", "notarealcollection"])
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert "unknown discover collection" in data["error"].lower()
+
     def test_lookup_users_command(self):
         result = _invoke(["lookup", "users", "--days-since-posting", "alice"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["ok"] is True
         assert data["data"]["users"][0]["username"] == "alice"
+
+
+class TestUpload:
+    def test_upload_local_file(self, tmp_path):
+        photo = tmp_path / "otter.jpg"
+        photo.write_bytes(b"fake-image")
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+            result = runner.invoke(app, ["--format", "json", "upload", str(photo)])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["url"] == "https://cdn.micro.blog/photos/test-upload.jpg"
+
+    def test_upload_remote_url(self):
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.commands.upload._download_image", return_value=("otter.jpg", b"fake-image", "image/jpeg")):
+            result = runner.invoke(app, ["--format", "json", "upload", "https://example.com/otter.jpg"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["source"] == "https://example.com/otter.jpg"

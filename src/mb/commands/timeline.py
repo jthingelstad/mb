@@ -3,6 +3,7 @@
 import typer
 
 from mb.commands import get_client, get_format, get_profile, output_or_exit, add_content_text
+from mb.discover_collections import get_discover_collection, list_discover_collections
 
 app = typer.Typer(no_args_is_help=False, invoke_without_command=True, rich_markup_mode=None)
 
@@ -52,9 +53,17 @@ def photos(ctx: typer.Context):
 def discover(
     ctx: typer.Context,
     collection: str = typer.Option(None, "--collection", "-c", help="Collection name (e.g. books, music)"),
+    list_collections: bool = typer.Option(False, "--list", help="List curated discover collections"),
 ):
     """Show discover timeline."""
     fmt = get_format(ctx)
+    if list_collections:
+        output_or_exit({"ok": True, "data": {"kind": "discover_collections", "collections": list_discover_collections()}}, fmt)
+        return
+    if collection and not get_discover_collection(collection):
+        from mb.formatters import output
+        output({"ok": False, "error": f"Unknown discover collection: {collection}. Use --list to see curated options.", "code": 400}, fmt)
+        raise SystemExit(1)
     client = get_client(ctx)
     result = client.get_discover(collection=collection)
     if result["ok"]:
