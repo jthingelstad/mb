@@ -39,14 +39,32 @@ def _latest_seen_id(*groups: list[dict]) -> int | None:
     return newest
 
 
+def _enrich_mentions(client, username: str, items: list[dict]) -> list[dict]:
+    """Add thread_count to mention items via conversation lookups."""
+    enriched = []
+    for item in items:
+        item_id = _item_id(item)
+        thread_count = 0
+        if item_id is not None:
+            conversation = client.get_conversation(item_id)
+            if conversation["ok"]:
+                thread_count = len(conversation["data"].get("items", []))
+        item = dict(item, thread_count=thread_count)
+        enriched.append(item)
+    return enriched
+
+
 def run(
     ctx: typer.Context,
     count: int = 3,
     mention_count: int = 3,
     mentions_only: bool = False,
-    advance: bool = False,
+    advance: bool = True,
+    no_advance: bool = False,
 ):
     """Build a compact heartbeat summary from current identity and recent activity."""
+    if no_advance:
+        advance = False
     client = get_client(ctx)
     fmt = get_format(ctx)
     profile = get_profile(ctx)
@@ -56,6 +74,7 @@ def run(
     if not identity["ok"]:
         output_or_exit(identity, fmt)
         return
+    account = identity["data"]
 
     latest_timeline = client.get_timeline(count=1)
     if not latest_timeline["ok"]:
@@ -95,15 +114,13 @@ def run(
     add_content_text(mentions_result["data"])
     mention_window = _filter_items_since(mentions_result["data"].get("items", []), checkpoint)
     mention_total = len(mention_window)
-    mention_items = mention_window[:mention_count]
+    mention_items = _enrich_mentions(client, account.get("username", ""), mention_window[:mention_count]) if mention_count > 0 else []
 
     latest_seen = _latest_seen_id(latest_timeline_items, timeline_items, mention_window)
     advanced = False
     if advance and latest_seen is not None:
         config.save_named_checkpoint("heartbeat", latest_seen, profile=profile)
         advanced = True
-
-    account = identity["data"]
     output_or_exit({
         "ok": True,
         "data": {

@@ -7,7 +7,7 @@ import typer.core
 
 from mb import config
 from mb.api import MicroblogClient
-from mb.commands import blog, catchup as catchup_cmd, checkpoint, conversation, heartbeat as heartbeat_cmd, inbox as inbox_cmd, lookup, post, timeline, upload as upload_cmd, user
+from mb.commands import blog, catchup as catchup_cmd, checkpoint, conversation, guide as guide_cmd, heartbeat as heartbeat_cmd, inbox as inbox_cmd, lookup, post, timeline, upload as upload_cmd, user
 from mb.formatters import output
 
 
@@ -168,6 +168,12 @@ def blogs(ctx: typer.Context):
         raise SystemExit(1)
 
 
+@app.command()
+def guide(ctx: typer.Context):
+    """Show agent-oriented workflow guide for mb commands."""
+    guide_cmd.run(fmt=get_format(ctx))
+
+
 @app.command("following")
 def following_alias(
     ctx: typer.Context,
@@ -211,15 +217,15 @@ def heartbeat(
     count: int = typer.Option(3, "--count", "-n", min=1, help="Maximum timeline items to include"),
     mention_count: int = typer.Option(3, "--mention-count", min=0, help="Maximum mention items to include"),
     mentions_only: bool = typer.Option(False, "--mentions-only", help="Only include mention/reply activity"),
-    advance: bool = typer.Option(False, "--advance", help="Save the newest seen post ID as the heartbeat checkpoint"),
+    no_advance: bool = typer.Option(False, "--no-advance", help="Do not advance the heartbeat checkpoint after this run"),
 ):
-    """Return a compact session-start snapshot for an agent."""
+    """Return a compact session-start snapshot for an agent. Advances the checkpoint by default."""
     heartbeat_cmd.run(
         ctx,
         count=count,
         mention_count=mention_count,
         mentions_only=mentions_only,
-        advance=advance,
+        no_advance=no_advance,
     )
 
 

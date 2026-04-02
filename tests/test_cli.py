@@ -559,7 +559,7 @@ class TestHeartbeat:
         assert data["data"]["new_mentions_count"] == 1
         assert [item["id"] for item in data["data"]["mentions"]] == ["20004"]
 
-    def test_heartbeat_advance_saves_latest_seen_id(self, tmp_path):
+    def test_heartbeat_advances_by_default(self, tmp_path):
         config_dir = tmp_path / ".config" / "mb"
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
@@ -571,13 +571,33 @@ class TestHeartbeat:
              patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
              patch("mb.config.CONFIG_DIR", config_dir), \
              patch("mb.config.CONFIG_FILE", config_file):
-            result = runner.invoke(app, ["--format", "json", "heartbeat", "--advance"])
+            result = runner.invoke(app, ["--format", "json", "heartbeat"])
 
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["data"]["advanced"] is True
         saved = config_file.read_text()
         assert 'heartbeat_checkpoint = 20004' in saved
+
+    def test_heartbeat_no_advance_suppresses_save(self, tmp_path):
+        config_dir = tmp_path / ".config" / "mb"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "config.toml"
+        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\n')
+
+        transport = _mock_transport()
+        patches = _patch_config()
+        with patches[0], patches[1], patches[2], \
+             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
+             patch("mb.config.CONFIG_DIR", config_dir), \
+             patch("mb.config.CONFIG_FILE", config_file):
+            result = runner.invoke(app, ["--format", "json", "heartbeat", "--no-advance"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["data"]["advanced"] is False
+        saved = config_file.read_text()
+        assert 'heartbeat_checkpoint' not in saved
 
     def test_heartbeat_mentions_only_skips_timeline_items(self, tmp_path):
         config_dir = tmp_path / ".config" / "mb"
@@ -599,7 +619,7 @@ class TestHeartbeat:
         assert data["data"]["new_timeline_count"] == 0
         assert [item["id"] for item in data["data"]["mentions"]] == ["20004"]
 
-    def test_heartbeat_advance_considers_unsampled_mentions(self, tmp_path):
+    def test_heartbeat_default_advance_considers_unsampled_mentions(self, tmp_path):
         config_dir = tmp_path / ".config" / "mb"
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
@@ -611,7 +631,7 @@ class TestHeartbeat:
              patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
              patch("mb.config.CONFIG_DIR", config_dir), \
              patch("mb.config.CONFIG_FILE", config_file):
-            result = runner.invoke(app, ["--format", "json", "heartbeat", "--advance", "--mention-count", "0"])
+            result = runner.invoke(app, ["--format", "json", "heartbeat", "--mention-count", "0"])
 
         assert result.exit_code == 0
         saved = config_file.read_text()

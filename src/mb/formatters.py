@@ -400,7 +400,11 @@ def output_agent(data: dict) -> None:
         if mention_items:
             print("mentions:")
             for item in mention_items:
-                print(_agent_post_line(item))
+                line = _agent_post_line(item)
+                tc = item.get("thread_count")
+                if tc is not None and tc > 1:
+                    line += f" (replies: {tc - 1})"
+                print(line)
         return
 
     if isinstance(payload, dict) and payload.get("kind") == "catchup":

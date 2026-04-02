@@ -1,3 +1,19 @@
+## mb v1.1.0
+
+### Heartbeat auto-advance
+
+`mb heartbeat` now advances the checkpoint by default. No more forgetting `--advance` and seeing the same posts every session. Use `--no-advance` to suppress when you want to peek without committing.
+
+### Thread depth on heartbeat mentions
+
+Mention items in heartbeat output now include `thread_count` from a lightweight conversation lookup. Agent format shows `(replies: N)` so agents can decide whether a thread is worth expanding before calling `mb conversation`.
+
+### Workflow guide
+
+New `mb guide` command prints an agent-oriented workflow reference covering session start flows, self-review, publishing, pipelines, checkpoints, and output formats. Explains *when* to use each command and *how they relate* — the context that `--help` alone doesn't convey.
+
+---
+
 ## mb v1.0.0
 
 A command-line client for [micro.blog](https://micro.blog), designed for agent use. Machine-readable JSON output, zero interactive prompts, composable and pipeable commands.
