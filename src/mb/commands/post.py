@@ -218,7 +218,6 @@ def get_post(
     post_id: str = typer.Argument(..., help="Post ID or URL to fetch"),
 ):
     """Fetch a single post by ID or URL."""
-    from mb.formatters import output
 
     fmt = get_format(ctx)
     client = get_client(ctx)
@@ -324,7 +323,6 @@ def delete(
     post_id: str = typer.Argument(..., help="Post ID or URL to delete"),
 ):
     """Delete a post."""
-    from mb.formatters import output
 
     fmt = get_format(ctx)
     client = get_client(ctx)

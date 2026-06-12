@@ -1,6 +1,5 @@
 """Tests for newer post, search, formatter, and username helper features."""
 
-import json
 
 from mb.commands import _micropub_item_url, resolve_post_url, _extract_author_username
 from mb.commands.post import _extract_post_id

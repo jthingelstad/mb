@@ -3,7 +3,6 @@
 import httpx
 
 from mb.api import MicroblogClient
-from tests.conftest import TIMELINE_ITEMS, VERIFY_RESPONSE, CONVERSATION_RESPONSE
 
 
 class TestVerifyToken:

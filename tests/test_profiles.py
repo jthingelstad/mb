@@ -8,7 +8,6 @@ from mb.config import (
     get_blog,
     save_config,
     list_profiles,
-    DEFAULT_PROFILE,
 )
 
 
