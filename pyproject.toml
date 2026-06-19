@@ -17,7 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=9.0.3",
-    "ruff>=0.15.17",
+    "ruff>=0.15.18",
     "click>=7.1",
 ]
 
