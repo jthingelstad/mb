@@ -18,7 +18,7 @@ dependencies = [
 dev = [
     "pytest>=9.0.3",
     "ruff>=0.15.18",
-    "click>=7.1",
+    "click>=8.4.1",
 ]
 
 [project.scripts]
