@@ -9,7 +9,7 @@ description = "Command-line client for micro.blog, designed for agent use"
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
-    "typer>=0.9",
+    "typer>=0.26.7",
     "httpx>=0.28.1",
     "rich>=15.0.0",
 ]
