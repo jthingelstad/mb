@@ -207,7 +207,7 @@ class MicroblogClient:
             categories = props.get("category", [])
             status_list = props.get("post-status", [])
             status = status_list[0] if status_list else "published"
-            item: dict = {
+            normalized_item: dict = {
                 "id": uid,
                 "url": url,
                 "title": title,
@@ -217,8 +217,8 @@ class MicroblogClient:
                 "_microblog": {"post_status": status},
             }
             if owner:
-                item["author"] = {"_microblog": {"username": owner}}
-            out.append(item)
+                normalized_item["author"] = {"_microblog": {"username": owner}}
+            out.append(normalized_item)
         return out
 
     # ── Micropub API (writes) ───────────────────────────────

@@ -5,7 +5,7 @@ import re
 import typer
 
 
-def get_client(ctx: typer.Context = None):
+def get_client(ctx: typer.Context | None = None):
     from mb.cli import get_client as _get_client
 
     return _get_client(ctx)

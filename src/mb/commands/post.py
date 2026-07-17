@@ -81,17 +81,19 @@ def _validate_photo_sources(photo: str | None, photo_url: str | None) -> None:
 @app.command()
 def new(
     ctx: typer.Context,
-    content_arg: str = typer.Argument(None, help="Post content (use '-' for stdin)"),
-    content_opt: str = typer.Option(None, "--content", help="Post content (use '-' for stdin)"),
-    title: str = typer.Option(None, "--title", "-t", help="Post title"),
+    content_arg: str | None = typer.Argument(None, help="Post content (use '-' for stdin)"),
+    content_opt: str | None = typer.Option(
+        None, "--content", help="Post content (use '-' for stdin)"
+    ),
+    title: str | None = typer.Option(None, "--title", "-t", help="Post title"),
     draft: bool = typer.Option(False, "--draft", help="Create as draft"),
-    file: str = typer.Option(None, "--file", help="Read content from markdown file"),
-    photo: str = typer.Option(None, "--photo", help="Path to photo to upload"),
-    photo_url: str = typer.Option(
+    file: str | None = typer.Option(None, "--file", help="Read content from markdown file"),
+    photo: str | None = typer.Option(None, "--photo", help="Path to photo to upload"),
+    photo_url: str | None = typer.Option(
         None, "--photo-url", help="Existing uploaded photo URL to attach"
     ),
-    alt: str = typer.Option(None, "--alt", help="Alt text for photo"),
-    category: list[str] = typer.Option(
+    alt: str | None = typer.Option(None, "--alt", help="Alt text for photo"),
+    category: list[str] | None = typer.Option(
         None, "--category", "-c", help="Categories/tags for the post"
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without posting"),

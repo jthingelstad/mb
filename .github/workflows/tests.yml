@@ -3,7 +3,7 @@ name: tests
 on:
   push:
     branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,6 +11,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -22,5 +23,11 @@ jobs:
         run: uv run --locked ruff check .
       - name: Format
         run: uv run --locked ruff format --check .
+      - name: Type check
+        run: uv run --locked mypy src/mb --ignore-missing-imports
+      - name: Audit locked dependencies
+        run: |
+          uv export --locked --no-dev --no-emit-project --format requirements-txt > /tmp/requirements.txt
+          uvx --from pip-audit==2.10.1 pip-audit --requirement /tmp/requirements.txt --disable-pip
       - name: Tests
-        run: uv run --locked pytest tests/ -q
+        run: uv run --locked pytest tests/ -q --cov=mb --cov-report=term-missing --cov-fail-under=70

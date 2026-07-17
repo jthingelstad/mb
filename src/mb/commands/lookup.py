@@ -283,7 +283,7 @@ def users(
     for username in resolved:
         item = results_by_username[username]
         if item.get("ok"):
-            entry = {"username": username}
+            entry: dict[str, object] = {"username": username}
             for key in (
                 "inactive_days",
                 "last_post_date",

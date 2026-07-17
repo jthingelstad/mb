@@ -10,8 +10,11 @@ from mb.commands import add_content_text, get_client, get_format, get_profile, o
 
 def _item_id(item: dict) -> int | None:
     """Return an item's numeric ID if possible."""
+    value = item.get("id")
+    if value is None:
+        return None
     try:
-        return int(item.get("id"))
+        return int(value)
     except (TypeError, ValueError):
         return None
 
