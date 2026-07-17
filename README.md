@@ -264,8 +264,11 @@ mb blog search "query"       Search your posts
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest
+uv sync --locked
+uv run --locked ruff check .
+uv run --locked ruff format --check .
+uv run --locked mypy src/mb --ignore-missing-imports
+uv run --locked pytest tests/ -q --cov=mb --cov-report=term-missing --cov-fail-under=70
 ```
 
 Tests use `httpx.MockTransport` — no live API calls required.

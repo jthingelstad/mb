@@ -315,13 +315,16 @@ Practical implications:
 Install:
 
 ```bash
-pip install -e ".[dev]"
+uv sync --locked
 ```
 
-Run tests:
+Run the same checks CI uses:
 
 ```bash
-.venv/bin/python -m pytest -q
+uv run --locked ruff check .
+uv run --locked ruff format --check .
+uv run --locked mypy src/mb --ignore-missing-imports
+uv run --locked pytest tests/ -q --cov=mb --cov-report=term-missing --cov-fail-under=70
 ```
 
 Testing guidance:
