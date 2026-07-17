@@ -1,8 +1,8 @@
 """Media upload commands."""
 
+import mimetypes
 from pathlib import Path
 from urllib.parse import urlparse
-import mimetypes
 
 import httpx
 import typer
@@ -19,7 +19,11 @@ def _download_image(url: str) -> tuple[str, bytes, str | None] | dict:
         return {"ok": False, "error": f"Unable to fetch image URL: {exc}", "code": 400}
 
     if resp.status_code >= 400:
-        return {"ok": False, "error": f"Image URL returned HTTP {resp.status_code}", "code": resp.status_code}
+        return {
+            "ok": False,
+            "error": f"Image URL returned HTTP {resp.status_code}",
+            "code": resp.status_code,
+        }
 
     content_type = resp.headers.get("Content-Type", "").split(";")[0].strip() or None
     if content_type and not content_type.startswith("image/"):

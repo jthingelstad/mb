@@ -70,12 +70,14 @@ def _build_action_response(action_name: str, usernames: list[str], action_fn) ->
     error_count = 0
     for name in usernames:
         result = action_fn(name)
-        results.append({
-            "username": name,
-            "ok": result.get("ok", False),
-            "error": result.get("error"),
-            "code": result.get("code"),
-        })
+        results.append(
+            {
+                "username": name,
+                "ok": result.get("ok", False),
+                "error": result.get("error"),
+                "code": result.get("code"),
+            }
+        )
         if not result.get("ok"):
             error_count += 1
 
@@ -125,7 +127,9 @@ def show(ctx: typer.Context, username: str = typer.Argument(..., help="Username 
 @app.command()
 def following(
     ctx: typer.Context,
-    username: str = typer.Argument(None, help="Username to check following list (defaults to current user)"),
+    username: str = typer.Argument(
+        None, help="Username to check following list (defaults to current user)"
+    ),
 ):
     """List who a user is following."""
     target_username = username or get_username(ctx)
@@ -133,7 +137,12 @@ def following(
 
 
 @app.command("discover")
-def discover_user(ctx: typer.Context, username: str = typer.Argument(None, help="Username to discover from (defaults to current user)")):
+def discover_user(
+    ctx: typer.Context,
+    username: str = typer.Argument(
+        None, help="Username to discover from (defaults to current user)"
+    ),
+):
     """List accounts someone follows that you do not."""
     target_username = username or get_username(ctx)
     output_or_exit(get_client(ctx).get_user_discover(target_username), get_format(ctx))

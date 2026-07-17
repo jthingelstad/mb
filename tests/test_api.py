@@ -18,6 +18,7 @@ class TestVerifyToken:
 
     def test_invalid_token_api_error(self):
         """API returns 200 with {"error": "..."} for invalid tokens."""
+
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"error": "App token was not valid."})
 
@@ -151,7 +152,9 @@ class TestMicropub:
         assert result["data"]["url"] == "https://cdn.micro.blog/photos/example-upload.jpg"
 
     def test_upload_bytes(self, mock_client):
-        result = mock_client.micropub_upload_bytes("test.jpg", b"image-bytes", content_type="image/jpeg")
+        result = mock_client.micropub_upload_bytes(
+            "test.jpg", b"image-bytes", content_type="image/jpeg"
+        )
         assert result["ok"] is True
         assert result["data"]["url"] == "https://cdn.micro.blog/photos/example-upload.jpg"
 
@@ -172,6 +175,7 @@ class TestRateLimiting:
 class TestErrorMessages:
     def test_empty_error_body_has_fallback(self):
         """HTTP errors with empty bodies should include a fallback message."""
+
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(404, text="")
 
@@ -184,6 +188,7 @@ class TestErrorMessages:
 
     def test_empty_micropub_error_has_fallback(self):
         """Micropub errors with empty bodies should include a fallback message."""
+
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(404, text="")
 

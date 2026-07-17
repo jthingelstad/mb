@@ -5,7 +5,15 @@ from pathlib import Path
 
 import typer
 
-from mb.commands import add_content_text, extract_post_id, get_client, get_format, get_username, output_or_exit, resolve_post_url
+from mb.commands import (
+    add_content_text,
+    extract_post_id,
+    get_client,
+    get_format,
+    get_username,
+    output_or_exit,
+    resolve_post_url,
+)
 
 app = typer.Typer(no_args_is_help=True, rich_markup_mode=None)
 SHORT_POST_LIMIT = 300
@@ -38,15 +46,21 @@ def _parse_file(path: str) -> tuple[str | None, str]:
     return title, content
 
 
-def _resolve_new_post_content(content_arg: str | None, content_opt: str | None, file: str | None) -> tuple[str | None, str]:
+def _resolve_new_post_content(
+    content_arg: str | None, content_opt: str | None, file: str | None
+) -> tuple[str | None, str]:
     """Resolve content inputs for a new post command."""
-    provided_sources = sum([
-        file is not None,
-        content_opt is not None,
-        content_arg is not None,
-    ])
+    provided_sources = sum(
+        [
+            file is not None,
+            content_opt is not None,
+            content_arg is not None,
+        ]
+    )
     if provided_sources > 1:
-        raise ValueError("Provide exactly one content source: positional content, --content, or --file")
+        raise ValueError(
+            "Provide exactly one content source: positional content, --content, or --file"
+        )
 
     if file:
         file_title, file_content = _parse_file(file)
@@ -73,9 +87,13 @@ def new(
     draft: bool = typer.Option(False, "--draft", help="Create as draft"),
     file: str = typer.Option(None, "--file", help="Read content from markdown file"),
     photo: str = typer.Option(None, "--photo", help="Path to photo to upload"),
-    photo_url: str = typer.Option(None, "--photo-url", help="Existing uploaded photo URL to attach"),
+    photo_url: str = typer.Option(
+        None, "--photo-url", help="Existing uploaded photo URL to attach"
+    ),
     alt: str = typer.Option(None, "--alt", help="Alt text for photo"),
-    category: list[str] = typer.Option(None, "--category", "-c", help="Categories/tags for the post"),
+    category: list[str] = typer.Option(
+        None, "--category", "-c", help="Categories/tags for the post"
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without posting"),
 ):
     """Create a new post."""
@@ -103,14 +121,20 @@ def new(
         raise SystemExit(1)
 
     if dry_run:
-        output({"ok": True, "data": {
-            "dry_run": True,
-            "title": title,
-            "content": content,
-            "draft": draft,
-            "photo": photo or photo_url,
-            "categories": category,
-        }}, fmt)
+        output(
+            {
+                "ok": True,
+                "data": {
+                    "dry_run": True,
+                    "title": title,
+                    "content": content,
+                    "draft": draft,
+                    "photo": photo or photo_url,
+                    "categories": category,
+                },
+            },
+            fmt,
+        )
         return
 
     # Upload photo if provided
@@ -135,14 +159,22 @@ def new(
 def short(
     ctx: typer.Context,
     content_arg: str = typer.Argument(None, help="Short post content (use '-' for stdin)"),
-    content_opt: str = typer.Option(None, "--content", help="Short post content (use '-' for stdin)"),
+    content_opt: str = typer.Option(
+        None, "--content", help="Short post content (use '-' for stdin)"
+    ),
     draft: bool = typer.Option(False, "--draft", help="Create as draft"),
     file: str = typer.Option(None, "--file", help="Read short post content from markdown file"),
     photo: str = typer.Option(None, "--photo", help="Path to photo to upload"),
-    photo_url: str = typer.Option(None, "--photo-url", help="Existing uploaded photo URL to attach"),
+    photo_url: str = typer.Option(
+        None, "--photo-url", help="Existing uploaded photo URL to attach"
+    ),
     alt: str = typer.Option(None, "--alt", help="Alt text for photo"),
-    category: list[str] = typer.Option(None, "--category", "-c", help="Categories/tags for the post"),
-    strict_300: bool = typer.Option(False, "--strict-300", help=f"Fail if content exceeds {SHORT_POST_LIMIT} characters"),
+    category: list[str] = typer.Option(
+        None, "--category", "-c", help="Categories/tags for the post"
+    ),
+    strict_300: bool = typer.Option(
+        False, "--strict-300", help=f"Fail if content exceeds {SHORT_POST_LIMIT} characters"
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without posting"),
 ):
     """Create a short-form post without a title."""
@@ -174,21 +206,34 @@ def short(
     warnings = []
     if char_count > SHORT_POST_LIMIT:
         if strict_300:
-            output({"ok": False, "error": f"Short posts must be {SHORT_POST_LIMIT} characters or fewer with --strict-300", "code": 400}, fmt)
+            output(
+                {
+                    "ok": False,
+                    "error": f"Short posts must be {SHORT_POST_LIMIT} characters or fewer with --strict-300",
+                    "code": 400,
+                },
+                fmt,
+            )
             raise SystemExit(1)
         warnings.append(f"content exceeds {SHORT_POST_LIMIT} characters")
 
     if dry_run:
-        output({"ok": True, "data": {
-            "dry_run": True,
-            "short": True,
-            "content": content,
-            "char_count": char_count,
-            "draft": draft,
-            "photo": photo or photo_url,
-            "categories": category,
-            "warnings": warnings,
-        }}, fmt)
+        output(
+            {
+                "ok": True,
+                "data": {
+                    "dry_run": True,
+                    "short": True,
+                    "content": content,
+                    "char_count": char_count,
+                    "draft": draft,
+                    "photo": photo or photo_url,
+                    "categories": category,
+                    "warnings": warnings,
+                },
+            },
+            fmt,
+        )
         return
 
     if photo:
@@ -245,7 +290,14 @@ def edit(
         content = sys.stdin.read().strip()
 
     if content is None and title is None and category is None:
-        output({"ok": False, "error": "Nothing to update — provide --content, --title, or --category", "code": 400}, fmt)
+        output(
+            {
+                "ok": False,
+                "error": "Nothing to update — provide --content, --title, or --category",
+                "code": 400,
+            },
+            fmt,
+        )
         raise SystemExit(1)
 
     url = resolve_post_url(client, post_id, fmt)
@@ -277,8 +329,8 @@ def reply(
     content: str = typer.Argument(..., help="Reply content (use '-' for stdin)"),
 ):
     """Reply to a post via the native micro.blog API."""
-    from mb.formatters import output
     from mb.commands import _extract_author_username
+    from mb.formatters import output
 
     fmt = get_format(ctx)
     client = get_client(ctx)
@@ -290,7 +342,10 @@ def reply(
 
     numeric_id = _extract_post_id(post_id)
     if numeric_id is None:
-        output({"ok": False, "error": f"Cannot extract numeric post ID from: {post_id}", "code": 400}, fmt)
+        output(
+            {"ok": False, "error": f"Cannot extract numeric post ID from: {post_id}", "code": 400},
+            fmt,
+        )
         raise SystemExit(1)
 
     # Look up the post to find the author's username
@@ -306,7 +361,9 @@ def reply(
             break
 
     if not username:
-        output({"ok": False, "error": f"Post {post_id} not found in conversation", "code": 404}, fmt)
+        output(
+            {"ok": False, "error": f"Post {post_id} not found in conversation", "code": 404}, fmt
+        )
         raise SystemExit(1)
 
     # Prepend @username if not already present

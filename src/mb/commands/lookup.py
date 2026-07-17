@@ -1,8 +1,8 @@
 """Lookup commands for enriching existing records in a pipeline."""
 
-from concurrent.futures import ThreadPoolExecutor
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 import typer
 
@@ -58,7 +58,9 @@ def _read_post_identifiers_from_stdin() -> list[str]:
         if not line:
             continue
         normalized = _normalize_post_identifier(line)
-        if extract_post_id(normalized) is not None or normalized.startswith(("http://", "https://")):
+        if extract_post_id(normalized) is not None or normalized.startswith(
+            ("http://", "https://")
+        ):
             identifiers.append(normalized)
     return identifiers
 
@@ -87,8 +89,9 @@ def _resolve_post_identifiers(identifiers: list[str] | None) -> list[str]:
     return deduped
 
 
-def _fetch_user_lookup(token: str, base_url: str, username: str, include_last_post: bool,
-                       include_days_since: bool) -> dict:
+def _fetch_user_lookup(
+    token: str, base_url: str, username: str, include_last_post: bool, include_days_since: bool
+) -> dict:
     """Fetch lookup data for one user."""
     client = MicroblogClient(token=token, base_url=base_url)
     try:
@@ -116,7 +119,9 @@ def _fetch_user_lookup(token: str, base_url: str, username: str, include_last_po
         record["last_post_date"] = last_post_date
         record["last_post_id"] = latest.get("id")
         record["last_post_url"] = latest.get("url")
-        record["last_post_content_text"] = strip_html(latest.get("content_html", "")).strip() if latest else None
+        record["last_post_content_text"] = (
+            strip_html(latest.get("content_html", "")).strip() if latest else None
+        )
     if include_days_since:
         record["inactive_days"] = _days_since(last_post_date)
     return record
@@ -144,7 +149,12 @@ def _lookup_post_record(client: MicroblogClient, identifier: str) -> dict:
                     "item": item,
                     "conversation_items": thread_data["items"],
                 }
-        return {"ok": False, "identifier": identifier, "error": "Post not found in conversation", "code": 404}
+        return {
+            "ok": False,
+            "identifier": identifier,
+            "error": "Post not found in conversation",
+            "code": 404,
+        }
 
     if identifier.startswith("http://") or identifier.startswith("https://"):
         source = client.micropub_get(identifier)
@@ -169,11 +179,17 @@ def _lookup_post_record(client: MicroblogClient, identifier: str) -> dict:
             "conversation_items": [],
         }
 
-    return {"ok": False, "identifier": identifier, "error": f"Unsupported post identifier: {identifier}", "code": 400}
+    return {
+        "ok": False,
+        "identifier": identifier,
+        "error": f"Unsupported post identifier: {identifier}",
+        "code": 400,
+    }
 
 
-def _fetch_post_lookup(token: str, base_url: str, identifier: str,
-                       include_post: bool, include_conversation: bool) -> dict:
+def _fetch_post_lookup(
+    token: str, base_url: str, identifier: str, include_post: bool, include_conversation: bool
+) -> dict:
     """Fetch lookup data for one post."""
     client = MicroblogClient(token=token, base_url=base_url)
     try:
@@ -194,7 +210,9 @@ def _fetch_post_lookup(token: str, base_url: str, identifier: str,
         "author_username": item.get("author", {}).get("_microblog", {}).get("username"),
     }
     if include_post:
-        result["content_text"] = item.get("content_text") or strip_html(item.get("content_html", "")).strip()
+        result["content_text"] = (
+            item.get("content_text") or strip_html(item.get("content_html", "")).strip()
+        )
     if include_conversation:
         result["conversation_items"] = record["conversation_items"]
         result["conversation_count"] = len(record["conversation_items"])
@@ -204,22 +222,42 @@ def _fetch_post_lookup(token: str, base_url: str, identifier: str,
 @app.command("users")
 def users(
     ctx: typer.Context,
-    usernames: list[str] = typer.Argument(None, help="Usernames to look up; omit to read from stdin"),
+    usernames: list[str] = typer.Argument(
+        None, help="Usernames to look up; omit to read from stdin"
+    ),
     last_post: bool = typer.Option(False, "--last-post", help="Include the most recent post"),
-    days_since_posting: bool = typer.Option(False, "--days-since-posting", help="Include days since the most recent post"),
-    concurrency: int = typer.Option(8, "--concurrency", min=1, max=32, help="Maximum concurrent lookups"),
+    days_since_posting: bool = typer.Option(
+        False, "--days-since-posting", help="Include days since the most recent post"
+    ),
+    concurrency: int = typer.Option(
+        8, "--concurrency", min=1, max=32, help="Maximum concurrent lookups"
+    ),
 ):
     """Look up additional data about users from stdin or explicit usernames."""
     from mb.formatters import output
 
     fmt = get_format(ctx)
     if not last_post and not days_since_posting:
-        output({"ok": False, "error": "Choose at least one lookup: --last-post or --days-since-posting", "code": 400}, fmt)
+        output(
+            {
+                "ok": False,
+                "error": "Choose at least one lookup: --last-post or --days-since-posting",
+                "code": 400,
+            },
+            fmt,
+        )
         raise SystemExit(1)
 
     resolved = _resolve_usernames(usernames)
     if not resolved:
-        output({"ok": False, "error": "No usernames provided. Pass usernames or pipe them on stdin.", "code": 400}, fmt)
+        output(
+            {
+                "ok": False,
+                "error": "No usernames provided. Pass usernames or pipe them on stdin.",
+                "code": 400,
+            },
+            fmt,
+        )
         raise SystemExit(1)
 
     client = get_client(ctx)
@@ -257,44 +295,69 @@ def users(
                     entry[key] = item.get(key)
             users.append(entry)
         else:
-            errors.append({
-                "username": username,
-                "error": item.get("error"),
-                "code": item.get("code"),
-            })
+            errors.append(
+                {
+                    "username": username,
+                    "error": item.get("error"),
+                    "code": item.get("code"),
+                }
+            )
 
-    output_or_exit({
-        "ok": True,
-        "data": {
-            "users": users,
-            "errors": errors,
-            "criteria": {
-                "last_post": last_post,
-                "days_since_posting": days_since_posting,
+    output_or_exit(
+        {
+            "ok": True,
+            "data": {
+                "users": users,
+                "errors": errors,
+                "criteria": {
+                    "last_post": last_post,
+                    "days_since_posting": days_since_posting,
+                },
             },
         },
-    }, fmt)
+        fmt,
+    )
 
 
 @app.command("posts")
 def posts(
     ctx: typer.Context,
-    identifiers: list[str] = typer.Argument(None, help="Post IDs or URLs to look up; omit to read from stdin"),
+    identifiers: list[str] = typer.Argument(
+        None, help="Post IDs or URLs to look up; omit to read from stdin"
+    ),
     post: bool = typer.Option(False, "--post", help="Include the matched post content"),
-    conversation: bool = typer.Option(False, "--conversation", help="Include the full conversation thread"),
-    concurrency: int = typer.Option(8, "--concurrency", min=1, max=32, help="Maximum concurrent lookups"),
+    conversation: bool = typer.Option(
+        False, "--conversation", help="Include the full conversation thread"
+    ),
+    concurrency: int = typer.Option(
+        8, "--concurrency", min=1, max=32, help="Maximum concurrent lookups"
+    ),
 ):
     """Look up post and conversation data from stdin or explicit identifiers."""
     from mb.formatters import output
 
     fmt = get_format(ctx)
     if not post and not conversation:
-        output({"ok": False, "error": "Choose at least one lookup: --post or --conversation", "code": 400}, fmt)
+        output(
+            {
+                "ok": False,
+                "error": "Choose at least one lookup: --post or --conversation",
+                "code": 400,
+            },
+            fmt,
+        )
         raise SystemExit(1)
 
     resolved = _resolve_post_identifiers(identifiers)
     if not resolved:
-        output({"ok": False, "error": "No post identifiers provided. Pass IDs/URLs or pipe them on stdin.", "code": 400}, fmt)
+        output(
+            {
+                "ok": False,
+                "error": "No post identifiers provided. Pass IDs/URLs or pipe them on stdin.",
+                "code": 400,
+            },
+            fmt,
+        )
         raise SystemExit(1)
 
     client = get_client(ctx)
@@ -334,21 +397,26 @@ def posts(
                 entry["conversation_count"] = item.get("conversation_count")
             posts_data.append(entry)
         else:
-            errors.append({
-                "identifier": identifier,
-                "error": item.get("error"),
-                "code": item.get("code"),
-            })
+            errors.append(
+                {
+                    "identifier": identifier,
+                    "error": item.get("error"),
+                    "code": item.get("code"),
+                }
+            )
 
-    output_or_exit({
-        "ok": True,
-        "data": {
-            "kind": "lookup_posts",
-            "posts": posts_data,
-            "errors": errors,
-            "criteria": {
-                "post": post,
-                "conversation": conversation,
+    output_or_exit(
+        {
+            "ok": True,
+            "data": {
+                "kind": "lookup_posts",
+                "posts": posts_data,
+                "errors": errors,
+                "criteria": {
+                    "post": post,
+                    "conversation": conversation,
+                },
             },
         },
-    }, fmt)
+        fmt,
+    )

@@ -65,8 +65,9 @@ class MicroblogClient:
 
     # ── JSON API (reads) ────────────────────────────────────
 
-    def get_timeline(self, count: int = 20, since_id: int | None = None,
-                     before_id: int | None = None) -> dict:
+    def get_timeline(
+        self, count: int = 20, since_id: int | None = None, before_id: int | None = None
+    ) -> dict:
         params: dict = {"count": count}
         if since_id is not None:
             params["since_id"] = since_id
@@ -147,8 +148,7 @@ class MicroblogClient:
         resp = self._client.get("/posts/check", params={"since_id": since_id})
         return self._handle_response(resp)
 
-    def get_blog_posts(self, username: str, count: int = 20,
-                       category: str | None = None) -> dict:
+    def get_blog_posts(self, username: str, count: int = 20, category: str | None = None) -> dict:
         """Get blog posts. Uses Micropub source for non-default destinations."""
         if self.default_destination:
             result = self.micropub_list()
@@ -165,8 +165,7 @@ class MicroblogClient:
         resp = self._client.get(f"/posts/{username}", params=params)
         return self._handle_response(resp)
 
-    def search_blog(self, username: str, query: str,
-                    category: str | None = None) -> dict:
+    def search_blog(self, username: str, query: str, category: str | None = None) -> dict:
         """Search posts. Uses client-side search for non-default destinations."""
         if self.default_destination:
             result = self.micropub_list()
@@ -176,9 +175,9 @@ class MicroblogClient:
             normalized = self._normalize_micropub_items(items, owner=username)
             q = query.lower()
             matched = [
-                i for i in normalized
-                if q in (i.get("content_html") or "").lower()
-                or q in (i.get("title") or "").lower()
+                i
+                for i in normalized
+                if q in (i.get("content_html") or "").lower() or q in (i.get("title") or "").lower()
             ]
             if category:
                 matched = [i for i in matched if category in i.get("tags", [])]
@@ -229,11 +228,17 @@ class MicroblogClient:
         resp = self._client.post("/posts/reply", data={"id": post_id, "content": content})
         return self._handle_response(resp)
 
-    def micropub_create(self, *, content: str, title: str | None = None,
-                        draft: bool = False, reply_to: str | None = None,
-                        photo_url: str | None = None,
-                        categories: list[str] | None = None,
-                        mp_destination: str | None = None) -> dict:
+    def micropub_create(
+        self,
+        *,
+        content: str,
+        title: str | None = None,
+        draft: bool = False,
+        reply_to: str | None = None,
+        photo_url: str | None = None,
+        categories: list[str] | None = None,
+        mp_destination: str | None = None,
+    ) -> dict:
         """Create a new post via Micropub."""
         data: dict = {
             "h": "entry",
@@ -255,9 +260,14 @@ class MicroblogClient:
         resp = self._client.post("/micropub", data=data)
         return self._handle_micropub_response(resp)
 
-    def micropub_update(self, url: str, *, content: str | None = None,
-                        title: str | None = None,
-                        categories: list[str] | None = None) -> dict:
+    def micropub_update(
+        self,
+        url: str,
+        *,
+        content: str | None = None,
+        title: str | None = None,
+        categories: list[str] | None = None,
+    ) -> dict:
         """Update an existing post via Micropub action=update."""
         data: dict = {
             "action": "update",
@@ -273,7 +283,11 @@ class MicroblogClient:
         if categories is not None:
             replace["category"] = categories
         if not replace:
-            return {"ok": False, "error": "Nothing to update — provide --content, --title, or --category", "code": 400}
+            return {
+                "ok": False,
+                "error": "Nothing to update — provide --content, --title, or --category",
+                "code": 400,
+            }
         data["replace"] = replace
         resp = self._client.post("/micropub", json=data)
         return self._handle_micropub_response(resp)
@@ -318,9 +332,9 @@ class MicroblogClient:
         resp = self._client.get("/micropub", params={"q": "config"})
         return self._handle_response(resp)
 
-    def micropub_upload_bytes(self, filename: str, content: bytes,
-                              alt: str | None = None,
-                              content_type: str | None = None) -> dict:
+    def micropub_upload_bytes(
+        self, filename: str, content: bytes, alt: str | None = None, content_type: str | None = None
+    ) -> dict:
         """Upload image bytes to the media endpoint, return its URL."""
         file_value = (filename, content, content_type) if content_type else (filename, content)
         files = {"file": file_value}

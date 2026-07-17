@@ -1,7 +1,6 @@
 """Tests for newer post, search, formatter, and username helper features."""
 
-
-from mb.commands import _micropub_item_url, resolve_post_url, _extract_author_username
+from mb.commands import _extract_author_username, _micropub_item_url, resolve_post_url
 from mb.commands.post import _extract_post_id
 from mb.formatters import _extract_username, output_agent
 
@@ -38,9 +37,7 @@ class TestMicropubUpdate:
 
 class TestMicropubGet:
     def test_get_post(self, mock_client):
-        result = mock_client.micropub_get(
-            "https://testuser.micro.blog/2026/02/28/hello.html"
-        )
+        result = mock_client.micropub_get("https://testuser.micro.blog/2026/02/28/hello.html")
         assert result["ok"] is True
         assert result["data"]["properties"]["content"] == ["Hello world"]
         assert "category" in result["data"]["properties"]
@@ -59,10 +56,13 @@ class TestSearchWithCategory:
 class TestMicropubItemUrl:
     def test_from_properties(self):
         """Extract URL from Micropub h-entry format."""
-        item = {"type": "h-entry", "properties": {
-            "url": ["https://blog.example/post.html"],
-            "content": ["Hello"],
-        }}
+        item = {
+            "type": "h-entry",
+            "properties": {
+                "url": ["https://blog.example/post.html"],
+                "content": ["Hello"],
+            },
+        }
         assert _micropub_item_url(item) == "https://blog.example/post.html"
 
     def test_from_flat(self):
@@ -212,6 +212,7 @@ class TestResolvePostUrl:
 
     def test_bare_numeric_id_not_found_exits(self, mock_client):
         import pytest
+
         with pytest.raises(SystemExit):
             resolve_post_url(mock_client, "99999", "json")
 
@@ -228,19 +229,22 @@ class TestAgentOutputDepth:
             "data": {
                 "items": [
                     {
-                        "id": 100, "depth": 0,
+                        "id": 100,
+                        "depth": 0,
                         "content_html": "<p>Root post</p>",
                         "date_published": "2026-02-28T10:00:00+00:00",
                         "author": {"name": "alice", "url": "https://micro.blog/alice"},
                     },
                     {
-                        "id": 101, "depth": 1,
+                        "id": 101,
+                        "depth": 1,
                         "content_html": "<p>Reply to root</p>",
                         "date_published": "2026-02-28T10:05:00+00:00",
                         "author": {"name": "bob", "url": "https://micro.blog/bob"},
                     },
                     {
-                        "id": 102, "depth": 2,
+                        "id": 102,
+                        "depth": 2,
                         "content_html": "<p>Reply to reply</p>",
                         "date_published": "2026-02-28T10:10:00+00:00",
                         "author": {"name": "alice", "url": "https://micro.blog/alice"},

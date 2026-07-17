@@ -103,20 +103,26 @@ def run(
     allowed_reasons = {"mention", "thread-reply"}
     invalid_reasons = [item for item in requested_reasons if item not in allowed_reasons]
     if invalid_reasons:
-        output_or_exit({
-            "ok": False,
-            "error": f"Unknown inbox reason filter: {', '.join(invalid_reasons)}",
-            "code": 400,
-        }, fmt)
+        output_or_exit(
+            {
+                "ok": False,
+                "error": f"Unknown inbox reason filter: {', '.join(invalid_reasons)}",
+                "code": 400,
+            },
+            fmt,
+        )
         return
 
     filters_active = bool(requested_reasons or fresh_hours is not None or max_age_days is not None)
     if advance and filters_active:
-        output_or_exit({
-            "ok": False,
-            "error": "Cannot combine --advance with selective inbox filters; review filtered results first, then rerun inbox without filters to advance the cursor.",
-            "code": 400,
-        }, fmt)
+        output_or_exit(
+            {
+                "ok": False,
+                "error": "Cannot combine --advance with selective inbox filters; review filtered results first, then rerun inbox without filters to advance the cursor.",
+                "code": 400,
+            },
+            fmt,
+        )
         return
 
     identity = client.verify_token()
@@ -133,12 +139,15 @@ def run(
     add_content_text(mentions["data"])
     window = _items_since(mentions["data"].get("items", []), checkpoint)
     age_filtered = [
-        item for item in window
+        item
+        for item in window
         if _item_matches_age(item, fresh_hours=fresh_hours, max_age_days=max_age_days)
     ]
     if requested_reasons:
         classified_items = [_classify_item(client, username, item) for item in age_filtered]
-        filtered_items = [item for item in classified_items if item.get("reason") in requested_reasons]
+        filtered_items = [
+            item for item in classified_items if item.get("reason") in requested_reasons
+        ]
         items = filtered_items[:count]
         filtered_count = len(filtered_items)
     else:
@@ -151,24 +160,27 @@ def run(
         config.save_named_checkpoint("inbox", latest_id, profile=profile)
         advanced = True
 
-    output_or_exit({
-        "ok": True,
-        "data": {
-            "kind": "inbox",
-            "username": username,
-            "mode": "since-checkpoint" if checkpoint is not None else "bootstrap",
-            "checkpoint": checkpoint,
-            "latest_id": latest_id,
-            "advanced": advanced,
-            "window_count": len(window),
-            "new_count": filtered_count,
-            "truncated": filtered_count > len(items),
-            "filters": {
-                "reason": requested_reasons,
-                "fresh_hours": fresh_hours,
-                "max_age_days": max_age_days,
-                "all": all_items,
+    output_or_exit(
+        {
+            "ok": True,
+            "data": {
+                "kind": "inbox",
+                "username": username,
+                "mode": "since-checkpoint" if checkpoint is not None else "bootstrap",
+                "checkpoint": checkpoint,
+                "latest_id": latest_id,
+                "advanced": advanced,
+                "window_count": len(window),
+                "new_count": filtered_count,
+                "truncated": filtered_count > len(items),
+                "filters": {
+                    "reason": requested_reasons,
+                    "fresh_hours": fresh_hours,
+                    "max_age_days": max_age_days,
+                    "all": all_items,
+                },
+                "items": items,
             },
-            "items": items,
         },
-    }, fmt)
+        fmt,
+    )

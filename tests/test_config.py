@@ -45,8 +45,7 @@ class TestSaveConfig:
     def test_creates_config_file(self, tmp_path):
         config_dir = tmp_path / ".config" / "mb"
         config_file = config_dir / "config.toml"
-        with patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with patch("mb.config.CONFIG_DIR", config_dir), patch("mb.config.CONFIG_FILE", config_file):
             save_config(token="my-token", username="testuser")
             content = config_file.read_text()
             assert 'token = "my-token"' in content
@@ -82,8 +81,7 @@ class TestCheckpoint:
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
         config_file.write_text('[default]\ntoken = "t"\nusername = "testuser"\n')
-        with patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with patch("mb.config.CONFIG_DIR", config_dir), patch("mb.config.CONFIG_FILE", config_file):
             save_checkpoint(85444200)
             assert get_checkpoint() == 85444200
             # Token should still be present
@@ -95,8 +93,7 @@ class TestCheckpoint:
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
         config_file.write_text('[default]\ntoken = "t"\n\n[work]\ntoken = "w"\n')
-        with patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with patch("mb.config.CONFIG_DIR", config_dir), patch("mb.config.CONFIG_FILE", config_file):
             save_checkpoint(12345, profile="work")
             assert get_checkpoint(profile="work") == 12345
             assert get_checkpoint(profile="default") is None
@@ -106,8 +103,7 @@ class TestCheckpoint:
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
         config_file.write_text('[default]\ntoken = "t"\nusername = "testuser"\n')
-        with patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with patch("mb.config.CONFIG_DIR", config_dir), patch("mb.config.CONFIG_FILE", config_file):
             save_named_checkpoint("heartbeat", 20004)
             assert get_named_checkpoint("heartbeat") == 20004
             assert get_checkpoint() is None
@@ -117,11 +113,11 @@ class TestCheckpoint:
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
         config_file.write_text(
-            '[default]\n'
+            "[default]\n"
             'token = "t"\n'
-            'checkpoint = 100\n'
-            'heartbeat_checkpoint = 200\n'
-            'inbox_checkpoint = 300\n'
+            "checkpoint = 100\n"
+            "heartbeat_checkpoint = 200\n"
+            "inbox_checkpoint = 300\n"
         )
         with patch("mb.config.CONFIG_FILE", config_file):
             assert list_named_checkpoints() == {
@@ -135,8 +131,7 @@ class TestCheckpoint:
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
         config_file.write_text('[default]\ntoken = "t"\nheartbeat_checkpoint = 200\n')
-        with patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with patch("mb.config.CONFIG_DIR", config_dir), patch("mb.config.CONFIG_FILE", config_file):
             assert clear_named_checkpoint("heartbeat") is True
             assert get_named_checkpoint("heartbeat") is None
             assert 'token = "t"' in config_file.read_text()
@@ -146,14 +141,13 @@ class TestCheckpoint:
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
         config_file.write_text(
-            '[default]\n'
+            "[default]\n"
             'token = "t"\n'
-            'checkpoint = 100\n'
-            'heartbeat_checkpoint = 200\n'
-            'catchup_checkpoint = 300\n'
+            "checkpoint = 100\n"
+            "heartbeat_checkpoint = 200\n"
+            "catchup_checkpoint = 300\n"
         )
-        with patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with patch("mb.config.CONFIG_DIR", config_dir), patch("mb.config.CONFIG_FILE", config_file):
             assert clear_all_named_checkpoints() == 3
             assert list_named_checkpoints() == {}
             assert 'token = "t"' in config_file.read_text()

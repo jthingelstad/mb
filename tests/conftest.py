@@ -91,7 +91,11 @@ CONVERSATION_RESPONSE = {
             "content_html": "<p>Root post</p>",
             "url": "https://alice.micro.blog/2026/02/28/root.html",
             "date_published": "2026-02-28T10:00:00+00:00",
-            "author": {"name": "alice", "url": "https://micro.blog/alice", "_microblog": {"username": "alice"}},
+            "author": {
+                "name": "alice",
+                "url": "https://micro.blog/alice",
+                "_microblog": {"username": "alice"},
+            },
             "_microblog": {},
         },
         {
@@ -99,7 +103,11 @@ CONVERSATION_RESPONSE = {
             "content_html": "<p>Reply to root</p>",
             "url": "https://bob.micro.blog/2026/02/28/reply.html",
             "date_published": "2026-02-28T10:05:00+00:00",
-            "author": {"name": "bob", "url": "https://micro.blog/bob", "_microblog": {"username": "bob"}},
+            "author": {
+                "name": "bob",
+                "url": "https://micro.blog/bob",
+                "_microblog": {"username": "bob"},
+            },
             "_microblog": {"reply_to_id": 100},
         },
         {
@@ -107,7 +115,11 @@ CONVERSATION_RESPONSE = {
             "content_html": "<p>Reply to reply</p>",
             "url": "https://alice.micro.blog/2026/02/28/reply2.html",
             "date_published": "2026-02-28T10:10:00+00:00",
-            "author": {"name": "alice", "url": "https://micro.blog/alice", "_microblog": {"username": "alice"}},
+            "author": {
+                "name": "alice",
+                "url": "https://micro.blog/alice",
+                "_microblog": {"username": "alice"},
+            },
             "_microblog": {"reply_to_id": 101},
         },
     ]
@@ -182,7 +194,8 @@ def _make_handler(routes: dict):
                 body = json.loads(request.content)
                 if body.get("action") == "update":
                     return httpx.Response(
-                        200, text="",
+                        200,
+                        text="",
                         headers={"Location": body.get("url", "")},
                     )
 
@@ -210,30 +223,52 @@ def mock_client():
         ("GET", "/posts/discover/books"): (200, {"items": TIMELINE_ITEMS[:1]}, {}),
         ("GET", "/posts/conversation"): (200, CONVERSATION_RESPONSE, {}),
         ("GET", "/posts/check"): (200, CHECK_RESPONSE, {}),
-        ("GET", "/posts/testuser"): (200, {
-            "username": "testuser",
-            "name": "Test User",
-            "avatar": "https://micro.blog/testuser/avatar.jpg",
-            "items": TIMELINE_ITEMS[:1],
-        }, {}),
-        ("GET", "/posts/alice"): (200, {
-            "username": "alice",
-            "name": "Alice",
-            "avatar": "https://micro.blog/alice/avatar.jpg",
-            "items": ALICE_ITEMS,
-        }, {}),
-        ("GET", "/posts/bob"): (200, {
-            "username": "bob",
-            "name": "Bob",
-            "avatar": "https://micro.blog/bob/avatar.jpg",
-            "items": BOB_ITEMS,
-        }, {}),
-        ("GET", "/users/following/testuser"): (200, [
-            {"username": "alice"}, {"username": "bob"},
-        ], {}),
-        ("GET", "/users/discover/testuser"): (200, [
-            {"username": "carol"}, {"username": "dave"},
-        ], {}),
+        ("GET", "/posts/testuser"): (
+            200,
+            {
+                "username": "testuser",
+                "name": "Test User",
+                "avatar": "https://micro.blog/testuser/avatar.jpg",
+                "items": TIMELINE_ITEMS[:1],
+            },
+            {},
+        ),
+        ("GET", "/posts/alice"): (
+            200,
+            {
+                "username": "alice",
+                "name": "Alice",
+                "avatar": "https://micro.blog/alice/avatar.jpg",
+                "items": ALICE_ITEMS,
+            },
+            {},
+        ),
+        ("GET", "/posts/bob"): (
+            200,
+            {
+                "username": "bob",
+                "name": "Bob",
+                "avatar": "https://micro.blog/bob/avatar.jpg",
+                "items": BOB_ITEMS,
+            },
+            {},
+        ),
+        ("GET", "/users/following/testuser"): (
+            200,
+            [
+                {"username": "alice"},
+                {"username": "bob"},
+            ],
+            {},
+        ),
+        ("GET", "/users/discover/testuser"): (
+            200,
+            [
+                {"username": "carol"},
+                {"username": "dave"},
+            ],
+            {},
+        ),
         ("POST", "/users/follow"): (200, {}, {}),
         ("POST", "/users/unfollow"): (200, {}, {}),
         ("POST", "/users/mute"): (200, {}, {}),
@@ -269,6 +304,7 @@ def mock_client():
 @pytest.fixture
 def rate_limited_client():
     """Return a client that always gets rate-limited."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(429, headers={"Retry-After": "60"})
 
@@ -285,6 +321,7 @@ def rate_limited_client():
 @pytest.fixture
 def auth_failure_client():
     """Return a client with a bad token."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, json={"error": "Unauthorized"})
 

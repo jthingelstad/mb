@@ -60,7 +60,11 @@ def _agent_post_line(item: dict) -> str:
     content = strip_html(item.get("content_html", "")).strip()
     cats = item.get("tags", [])
     if not cats:
-        cats = item.get("_microblog", {}).get("categories", []) if isinstance(item.get("_microblog"), dict) else []
+        cats = (
+            item.get("_microblog", {}).get("categories", [])
+            if isinstance(item.get("_microblog"), dict)
+            else []
+        )
     cat_str = f" [{', '.join(cats)}]" if cats else ""
     indent = "  " * item.get("depth", 0)
     return f"{indent}[{post_id}] @{author} ({time}){cat_str}: {content}"
@@ -238,7 +242,9 @@ def output_human(data: dict) -> None:
             for item in entry.get("conversation_items", []):
                 console.print(f"  {_agent_post_line(item)}")
         for entry in errors:
-            console.print(f"  {entry.get('identifier', '?')} error={entry.get('error', 'lookup error')}")
+            console.print(
+                f"  {entry.get('identifier', '?')} error={entry.get('error', 'lookup error')}"
+            )
         return
 
     # User lists (e.g. following, muting, blocking) — check before dict operations
@@ -255,7 +261,9 @@ def output_human(data: dict) -> None:
 
     if isinstance(payload, dict) and "results" in payload and "action" in payload:
         action = payload.get("action", "action")
-        console.print(f"[bold]{action}[/bold]: {payload.get('ok_count', 0)} ok, {payload.get('error_count', 0)} errors")
+        console.print(
+            f"[bold]{action}[/bold]: {payload.get('ok_count', 0)} ok, {payload.get('error_count', 0)} errors"
+        )
         for entry in payload.get("results", []):
             status = "[green]ok[/green]" if entry.get("ok") else "[red]error[/red]"
             console.print(f"  {status} @{entry.get('username', '?')}")
@@ -270,7 +278,10 @@ def output_human(data: dict) -> None:
             console.print("[dim]No items.[/dim]")
             return
         if users:
-            show_last_post = any(entry.get("last_post_date") or entry.get("last_post_content_text") for entry in users)
+            show_last_post = any(
+                entry.get("last_post_date") or entry.get("last_post_content_text")
+                for entry in users
+            )
             show_inactive = any("inactive_days" in entry for entry in users)
             table = Table(show_header=True, header_style="bold")
             table.add_column("Username")
@@ -282,7 +293,11 @@ def output_human(data: dict) -> None:
                 table.add_column("Content", max_width=60)
             for entry in users:
                 last_post = (entry.get("last_post_date") or "")[:10] or "never"
-                inactive = "unknown" if entry.get("inactive_days") is None else f"{entry['inactive_days']}d"
+                inactive = (
+                    "unknown"
+                    if entry.get("inactive_days") is None
+                    else f"{entry['inactive_days']}d"
+                )
                 content = entry.get("last_post_content_text") or ""
                 row = [f"@{entry.get('username', '?')}"]
                 if show_last_post:
@@ -294,7 +309,9 @@ def output_human(data: dict) -> None:
                 table.add_row(*row)
             console.print(table)
         for entry in errors:
-            console.print(f"  @{entry.get('username', '?')} error={entry.get('error', 'lookup error')}")
+            console.print(
+                f"  @{entry.get('username', '?')} error={entry.get('error', 'lookup error')}"
+            )
         return
 
     # Single post

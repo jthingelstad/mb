@@ -57,20 +57,24 @@ def list_profiles() -> list[dict]:
     profiles = []
     # Legacy flat format
     if "token" in config and not any(isinstance(v, dict) for v in config.values()):
-        profiles.append({
-            "name": DEFAULT_PROFILE,
-            "username": config.get("username", ""),
-            "blog": config.get("blog", ""),
-        })
+        profiles.append(
+            {
+                "name": DEFAULT_PROFILE,
+                "username": config.get("username", ""),
+                "blog": config.get("blog", ""),
+            }
+        )
         return profiles
     # Sectioned format
     for name, section in config.items():
         if isinstance(section, dict) and "token" in section:
-            profiles.append({
-                "name": name,
-                "username": section.get("username", ""),
-                "blog": section.get("blog", ""),
-            })
+            profiles.append(
+                {
+                    "name": name,
+                    "username": section.get("username", ""),
+                    "blog": section.get("blog", ""),
+                }
+            )
     return profiles
 
 
@@ -150,8 +154,9 @@ def clear_all_named_checkpoints(profile: str = DEFAULT_PROFILE) -> int:
     return len(keys)
 
 
-def save_config(token: str, username: str | None = None,
-                blog: str | None = None, profile: str = DEFAULT_PROFILE) -> None:
+def save_config(
+    token: str, username: str | None = None, blog: str | None = None, profile: str = DEFAULT_PROFILE
+) -> None:
     """Write token (and optional username/blog) to a profile in config file."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     config = _load_config_file()
@@ -181,14 +186,14 @@ def _write_config(config: dict) -> None:
     # Check if flat format (legacy — single profile with no sections)
     if "token" in config and not any(isinstance(v, dict) for v in config.values()):
         for key, value in config.items():
-            lines.append(f'{key} = {json.dumps(value)}')
+            lines.append(f"{key} = {json.dumps(value)}")
     else:
         for section_name, section in config.items():
             if not isinstance(section, dict):
                 continue
             lines.append(f"[{section_name}]")
             for key, value in section.items():
-                lines.append(f'{key} = {json.dumps(value)}')
+                lines.append(f"{key} = {json.dumps(value)}")
             lines.append("")
     CONFIG_FILE.write_text("\n".join(lines) + "\n")
     # Restrict permissions — token is sensitive

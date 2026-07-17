@@ -8,7 +8,12 @@ import httpx
 from typer.testing import CliRunner
 
 from mb.cli import app
-from tests.conftest import VERIFY_RESPONSE, MICROPUB_LIST_RESPONSE, MICROPUB_CONFIG_RESPONSE, CONVERSATION_RESPONSE
+from tests.conftest import (
+    CONVERSATION_RESPONSE,
+    MICROPUB_CONFIG_RESPONSE,
+    MICROPUB_LIST_RESPONSE,
+    VERIFY_RESPONSE,
+)
 
 runner = CliRunner()
 
@@ -53,49 +58,73 @@ def _mock_transport(routes: dict | None = None):
 
         if method == "POST" and path == "/micropub/media":
             return httpx.Response(
-                201, text="",
+                201,
+                text="",
                 headers={"Location": "https://cdn.micro.blog/photos/test-upload.jpg"},
             )
 
         if method == "POST" and path == "/micropub":
             return httpx.Response(
-                201, text="",
+                201,
+                text="",
                 headers={"Location": "https://testuser.micro.blog/2026/02/28/newpost.html"},
             )
 
         if method == "GET" and path == "/posts/conversation":
             if params.get("id") == "20004":
-                return httpx.Response(200, json={"items": [
-                    {
-                        "id": "20003",
-                        "content_html": "<p>My original post</p>",
-                        "date_published": "2026-03-12T00:00:00+00:00",
-                        "url": "https://micro.blog/testuser/20003",
-                        "author": {"name": "testuser", "url": "https://micro.blog/testuser", "_microblog": {"username": "testuser"}},
-                        "_microblog": {},
+                return httpx.Response(
+                    200,
+                    json={
+                        "items": [
+                            {
+                                "id": "20003",
+                                "content_html": "<p>My original post</p>",
+                                "date_published": "2026-03-12T00:00:00+00:00",
+                                "url": "https://micro.blog/testuser/20003",
+                                "author": {
+                                    "name": "testuser",
+                                    "url": "https://micro.blog/testuser",
+                                    "_microblog": {"username": "testuser"},
+                                },
+                                "_microblog": {},
+                            },
+                            {
+                                "id": "20004",
+                                "content_html": "<p>@testuser New mention</p>",
+                                "date_published": "2026-03-12T01:00:00+00:00",
+                                "url": "https://micro.blog/dave/20004",
+                                "author": {
+                                    "name": "dave",
+                                    "url": "https://micro.blog/dave",
+                                    "_microblog": {"username": "dave"},
+                                },
+                                "_microblog": {"reply_to_id": "20003"},
+                            },
+                        ]
                     },
-                    {
-                        "id": "20004",
-                        "content_html": "<p>@testuser New mention</p>",
-                        "date_published": "2026-03-12T01:00:00+00:00",
-                        "url": "https://micro.blog/dave/20004",
-                        "author": {"name": "dave", "url": "https://micro.blog/dave", "_microblog": {"username": "dave"}},
-                        "_microblog": {"reply_to_id": "20003"},
-                    },
-                ]})
+                )
             if params.get("id") in {"20001", "20002", "20003"}:
                 post_id = params.get("id")
                 author = {"20001": "alice", "20002": "bob", "20003": "carol"}[post_id]
-                return httpx.Response(200, json={"items": [
-                    {
-                        "id": post_id,
-                        "content_html": f"<p>Post {post_id}</p>",
-                        "date_published": "2026-03-12T00:00:00+00:00",
-                        "url": f"https://micro.blog/{author}/{post_id}",
-                        "author": {"name": author, "url": f"https://micro.blog/{author}", "_microblog": {"username": author}},
-                        "_microblog": {},
-                    }
-                ]})
+                return httpx.Response(
+                    200,
+                    json={
+                        "items": [
+                            {
+                                "id": post_id,
+                                "content_html": f"<p>Post {post_id}</p>",
+                                "date_published": "2026-03-12T00:00:00+00:00",
+                                "url": f"https://micro.blog/{author}/{post_id}",
+                                "author": {
+                                    "name": author,
+                                    "url": f"https://micro.blog/{author}",
+                                    "_microblog": {"username": author},
+                                },
+                                "_microblog": {},
+                            }
+                        ]
+                    },
+                )
             return httpx.Response(200, json=CONVERSATION_RESPONSE)
 
         if method == "GET" and path == "/posts/all":
@@ -126,78 +155,112 @@ def _mock_transport(routes: dict | None = None):
             return httpx.Response(200, json={"items": items[:count]})
 
         if method == "GET" and path == "/posts/mentions":
-            return httpx.Response(200, json={"items": [
-                {
-                    "id": "20004",
-                    "content_html": "<p>@testuser New mention</p>",
-                    "date_published": "2026-03-12T01:00:00+00:00",
-                    "author": {"name": "dave", "url": "https://micro.blog/dave"},
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "id": "20004",
+                            "content_html": "<p>@testuser New mention</p>",
+                            "date_published": "2026-03-12T01:00:00+00:00",
+                            "author": {"name": "dave", "url": "https://micro.blog/dave"},
+                        },
+                        {
+                            "id": "19999",
+                            "content_html": "<p>@testuser Old mention</p>",
+                            "date_published": "2026-03-09T01:00:00+00:00",
+                            "author": {"name": "erin", "url": "https://micro.blog/erin"},
+                        },
+                    ]
                 },
-                {
-                    "id": "19999",
-                    "content_html": "<p>@testuser Old mention</p>",
-                    "date_published": "2026-03-09T01:00:00+00:00",
-                    "author": {"name": "erin", "url": "https://micro.blog/erin"},
-                },
-            ]})
+            )
 
         if method == "GET" and path == "/posts/check":
             since_id = int(params.get("since_id", 0))
             timeline_ids = [20003, 20002, 20001]
-            return httpx.Response(200, json={
-                "count": len([item_id for item_id in timeline_ids if item_id > since_id]),
-                "check_seconds": 20,
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "count": len([item_id for item_id in timeline_ids if item_id > since_id]),
+                    "check_seconds": 20,
+                },
+            )
 
         if method == "GET" and path == "/posts/discover":
             return httpx.Response(200, json={"items": []})
 
         if method == "GET" and path == "/posts/discover/books":
-            return httpx.Response(200, json={"items": [{
-                "id": 30001,
-                "content_html": "<p>Book post</p>",
-                "date_published": "2026-03-12T00:00:00+00:00",
-                "author": {"name": "carol", "url": "https://micro.blog/carol"},
-            }]})
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "id": 30001,
+                            "content_html": "<p>Book post</p>",
+                            "date_published": "2026-03-12T00:00:00+00:00",
+                            "author": {"name": "carol", "url": "https://micro.blog/carol"},
+                        }
+                    ]
+                },
+            )
 
         if method == "GET" and path == "/posts/alice":
-            return httpx.Response(200, json={
-                "username": "alice",
-                "items": [{
-                    "id": 20001,
-                    "date_published": "2000-01-01T00:00:00+00:00",
-                    "content_html": "<p>Alice post</p>",
-                }],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "username": "alice",
+                    "items": [
+                        {
+                            "id": 20001,
+                            "date_published": "2000-01-01T00:00:00+00:00",
+                            "content_html": "<p>Alice post</p>",
+                        }
+                    ],
+                },
+            )
 
         if method == "GET" and path == "/posts/bob":
-            return httpx.Response(200, json={
-                "username": "bob",
-                "items": [{
-                    "id": 20002,
-                    "date_published": "2100-01-01T00:00:00+00:00",
-                    "content_html": "<p>Bob post</p>",
-                }],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "username": "bob",
+                    "items": [
+                        {
+                            "id": 20002,
+                            "date_published": "2100-01-01T00:00:00+00:00",
+                            "content_html": "<p>Bob post</p>",
+                        }
+                    ],
+                },
+            )
 
         if method == "POST" and path == "/posts/reply":
-            return httpx.Response(200, json={
-                "id": 103,
-                "url": "https://micro.blog/testuser/103",
-                "content_html": "<p>reply</p>",
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "id": 103,
+                    "url": "https://micro.blog/testuser/103",
+                    "content_html": "<p>reply</p>",
+                },
+            )
 
         if method == "GET" and path == "/users/following/testuser":
-            return httpx.Response(200, json=[
-                {"username": "alice"},
-                {"username": "bob"},
-            ])
+            return httpx.Response(
+                200,
+                json=[
+                    {"username": "alice"},
+                    {"username": "bob"},
+                ],
+            )
 
         if method == "GET" and path == "/users/discover/testuser":
-            return httpx.Response(200, json=[
-                {"username": "carol"},
-                {"username": "dave"},
-            ])
+            return httpx.Response(
+                200,
+                json=[
+                    {"username": "carol"},
+                    {"username": "dave"},
+                ],
+            )
 
         if method == "POST" and path == "/users/follow":
             return httpx.Response(200, json={})
@@ -226,13 +289,18 @@ def _invoke(args, token="test-token", username="testuser", blog=None):
     args = list(args)
     if "--format" not in args and "--human" not in args:
         args = ["--format", "json", *args]
-    with patches[0], patches[1], patches[2], \
-         patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+    with (
+        patches[0],
+        patches[1],
+        patches[2],
+        patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+    ):
         return runner.invoke(app, args)
 
 
 def _make_mock_init(transport):
     """Create a mock __init__ that injects the mock transport."""
+
     def mock_init(self, token="", base_url="https://micro.blog"):
         self.token = token
         self.base_url = base_url.rstrip("/")
@@ -244,6 +312,7 @@ def _make_mock_init(transport):
             headers={"Authorization": f"Bearer {token}"},
             timeout=30.0,
         )
+
     return mock_init
 
 
@@ -251,8 +320,12 @@ class TestWhoami:
     def test_default_format_is_agent(self):
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+        ):
             result = runner.invoke(app, ["whoami"])
 
         assert result.exit_code == 0
@@ -292,10 +365,13 @@ class TestWhoami:
 
 class TestProfiles:
     def test_list_profiles(self):
-        with patch("mb.config.list_profiles", return_value=[
-            {"name": "default", "username": "testuser", "blog": ""},
-            {"name": "test", "username": "ottoai", "blog": "https://ottoai-test.micro.blog/"},
-        ]):
+        with patch(
+            "mb.config.list_profiles",
+            return_value=[
+                {"name": "default", "username": "testuser", "blog": ""},
+                {"name": "test", "username": "ottoai", "blog": "https://ottoai-test.micro.blog/"},
+            ],
+        ):
             result = runner.invoke(app, ["--format", "json", "profiles"])
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -339,7 +415,9 @@ class TestPostNew:
         assert data["data"]["categories"] == ["journal", "test"]
 
     def test_conflicting_content_sources_error(self):
-        result = _invoke(["post", "new", "--dry-run", "--content", "Body content", "Positional content"])
+        result = _invoke(
+            ["post", "new", "--dry-run", "--content", "Body content", "Positional content"]
+        )
         assert result.exit_code == 1
         data = json.loads(result.output)
         assert data["ok"] is False
@@ -372,12 +450,18 @@ class TestPostShort:
         assert "300 characters or fewer" in data["error"]
 
     def test_short_post_rejects_two_photo_sources(self):
-        result = _invoke([
-            "post", "short", "--dry-run",
-            "--photo", "image.jpg",
-            "--photo-url", "https://cdn.example/test.jpg",
-            "hello",
-        ])
+        result = _invoke(
+            [
+                "post",
+                "short",
+                "--dry-run",
+                "--photo",
+                "image.jpg",
+                "--photo-url",
+                "https://cdn.example/test.jpg",
+                "hello",
+            ]
+        )
         assert result.exit_code == 1
         data = json.loads(result.output)
         assert "one photo source" in data["error"].lower()
@@ -469,10 +553,14 @@ class TestTimelineCheckpoint:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             # Save checkpoint
             result = runner.invoke(app, ["--format", "json", "timeline", "checkpoint", "85444200"])
             assert result.exit_code == 0
@@ -495,10 +583,14 @@ class TestTimelineCheckpoint:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "timeline", "checkpoint"])
             assert result.exit_code == 1
             data = json.loads(result.output)
@@ -515,11 +607,17 @@ class TestHeartbeat:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
-            result = runner.invoke(app, ["--format", "json", "heartbeat", "--count", "2", "--mention-count", "1"])
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
+            result = runner.invoke(
+                app, ["--format", "json", "heartbeat", "--count", "2", "--mention-count", "1"]
+            )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -536,18 +634,19 @@ class TestHeartbeat:
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
         config_file.write_text(
-            '[default]\n'
-            'token = "test-token"\n'
-            'username = "testuser"\n'
-            'heartbeat_checkpoint = 20002\n'
+            '[default]\ntoken = "test-token"\nusername = "testuser"\nheartbeat_checkpoint = 20002\n'
         )
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "heartbeat"])
 
         assert result.exit_code == 0
@@ -567,17 +666,21 @@ class TestHeartbeat:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "heartbeat"])
 
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["data"]["advanced"] is True
         saved = config_file.read_text()
-        assert 'heartbeat_checkpoint = 20004' in saved
+        assert "heartbeat_checkpoint = 20004" in saved
 
     def test_heartbeat_no_advance_suppresses_save(self, tmp_path):
         config_dir = tmp_path / ".config" / "mb"
@@ -587,30 +690,40 @@ class TestHeartbeat:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "heartbeat", "--no-advance"])
 
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["data"]["advanced"] is False
         saved = config_file.read_text()
-        assert 'heartbeat_checkpoint' not in saved
+        assert "heartbeat_checkpoint" not in saved
 
     def test_heartbeat_mentions_only_skips_timeline_items(self, tmp_path):
         config_dir = tmp_path / ".config" / "mb"
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
-        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\nheartbeat_checkpoint = 20002\n')
+        config_file.write_text(
+            '[default]\ntoken = "test-token"\nusername = "testuser"\nheartbeat_checkpoint = 20002\n'
+        )
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "heartbeat", "--mentions-only"])
 
         assert result.exit_code == 0
@@ -627,15 +740,19 @@ class TestHeartbeat:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "heartbeat", "--mention-count", "0"])
 
         assert result.exit_code == 0
         saved = config_file.read_text()
-        assert 'heartbeat_checkpoint = 20004' in saved
+        assert "heartbeat_checkpoint = 20004" in saved
 
 
 class TestCatchup:
@@ -647,10 +764,14 @@ class TestCatchup:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "catchup", "--count", "2"])
 
         assert result.exit_code == 0
@@ -664,14 +785,20 @@ class TestCatchup:
         config_dir = tmp_path / ".config" / "mb"
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
-        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\ncatchup_checkpoint = 20002\n')
+        config_file.write_text(
+            '[default]\ntoken = "test-token"\nusername = "testuser"\ncatchup_checkpoint = 20002\n'
+        )
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "catchup"])
 
         assert result.exit_code == 0
@@ -689,15 +816,21 @@ class TestCatchup:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
-            result = runner.invoke(app, ["--format", "json", "catchup", "--advance", "--count", "1"])
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
+            result = runner.invoke(
+                app, ["--format", "json", "catchup", "--advance", "--count", "1"]
+            )
 
         assert result.exit_code == 0
         saved = config_file.read_text()
-        assert 'catchup_checkpoint = 20003' in saved
+        assert "catchup_checkpoint = 20003" in saved
 
 
 class TestInbox:
@@ -709,10 +842,14 @@ class TestInbox:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "inbox", "--count", "1"])
 
         assert result.exit_code == 0
@@ -726,14 +863,20 @@ class TestInbox:
         config_dir = tmp_path / ".config" / "mb"
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
-        config_file.write_text('[default]\ntoken = "test-token"\nusername = "testuser"\ninbox_checkpoint = 20003\n')
+        config_file.write_text(
+            '[default]\ntoken = "test-token"\nusername = "testuser"\ninbox_checkpoint = 20003\n'
+        )
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "inbox"])
 
         assert result.exit_code == 0
@@ -749,15 +892,19 @@ class TestInbox:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "inbox", "--advance"])
 
         assert result.exit_code == 0
         saved = config_file.read_text()
-        assert 'inbox_checkpoint = 20004' in saved
+        assert "inbox_checkpoint = 20004" in saved
 
     def test_inbox_reason_filter(self, tmp_path):
         config_dir = tmp_path / ".config" / "mb"
@@ -767,10 +914,14 @@ class TestInbox:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "inbox", "--reason", "thread-reply"])
 
         assert result.exit_code == 0
@@ -787,11 +938,15 @@ class TestInbox:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file), \
-             patch("mb.commands.inbox.datetime", _FrozenDateTime):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+            patch("mb.commands.inbox.datetime", _FrozenDateTime),
+        ):
             result = runner.invoke(app, ["--format", "json", "inbox", "--fresh-hours", "24"])
 
         assert result.exit_code == 0
@@ -808,11 +963,17 @@ class TestInbox:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
-            result = runner.invoke(app, ["--format", "json", "inbox", "--reason", "thread-reply", "--advance"])
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
+            result = runner.invoke(
+                app, ["--format", "json", "inbox", "--reason", "thread-reply", "--advance"]
+            )
 
         assert result.exit_code == 1
         data = json.loads(result.output)
@@ -825,20 +986,24 @@ class TestCheckpointCommands:
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
         config_file.write_text(
-            '[default]\n'
+            "[default]\n"
             'token = "test-token"\n'
             'username = "testuser"\n'
-            'checkpoint = 100\n'
-            'heartbeat_checkpoint = 200\n'
-            'inbox_checkpoint = 300\n'
+            "checkpoint = 100\n"
+            "heartbeat_checkpoint = 200\n"
+            "inbox_checkpoint = 300\n"
         )
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "checkpoint", "list"])
 
         assert result.exit_code == 0
@@ -853,13 +1018,21 @@ class TestCheckpointCommands:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
-            set_result = runner.invoke(app, ["--format", "json", "checkpoint", "set", "heartbeat", "20004"])
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
+            set_result = runner.invoke(
+                app, ["--format", "json", "checkpoint", "set", "heartbeat", "20004"]
+            )
             get_result = runner.invoke(app, ["--format", "json", "checkpoint", "get", "heartbeat"])
-            clear_result = runner.invoke(app, ["--format", "json", "checkpoint", "clear", "heartbeat"])
+            clear_result = runner.invoke(
+                app, ["--format", "json", "checkpoint", "clear", "heartbeat"]
+            )
 
         assert set_result.exit_code == 0
         assert get_result.exit_code == 0
@@ -874,19 +1047,23 @@ class TestCheckpointCommands:
         config_dir.mkdir(parents=True)
         config_file = config_dir / "config.toml"
         config_file.write_text(
-            '[default]\n'
+            "[default]\n"
             'token = "test-token"\n'
             'username = "testuser"\n'
-            'checkpoint = 100\n'
-            'heartbeat_checkpoint = 200\n'
+            "checkpoint = 100\n"
+            "heartbeat_checkpoint = 200\n"
         )
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.config.CONFIG_DIR", config_dir), \
-             patch("mb.config.CONFIG_FILE", config_file):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch("mb.config.CONFIG_DIR", config_dir),
+            patch("mb.config.CONFIG_FILE", config_file),
+        ):
             result = runner.invoke(app, ["--format", "json", "checkpoint", "clear", "--all"])
 
         assert result.exit_code == 0
@@ -932,9 +1109,15 @@ class TestUserPipelines:
     def test_unfollow_reads_usernames_from_stdin(self):
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
-            result = runner.invoke(app, ["--format", "json", "user", "unfollow", "-"], input="@alice\nbob\n")
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+        ):
+            result = runner.invoke(
+                app, ["--format", "json", "user", "unfollow", "-"], input="@alice\nbob\n"
+            )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -945,9 +1128,15 @@ class TestUserPipelines:
     def test_follow_reads_usernames_from_stdin(self):
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
-            result = runner.invoke(app, ["--format", "json", "user", "follow", "-"], input="@carol\ndave\n")
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+        ):
+            result = runner.invoke(
+                app, ["--format", "json", "user", "follow", "-"], input="@carol\ndave\n"
+            )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -958,8 +1147,12 @@ class TestUserPipelines:
     def test_follow_reads_agent_format_lines_from_stdin(self):
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+        ):
             result = runner.invoke(
                 app,
                 ["--format", "json", "user", "follow", "-"],
@@ -975,8 +1168,12 @@ class TestUserPipelines:
     def test_follow_reads_dotted_usernames_from_stdin(self):
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+        ):
             result = runner.invoke(
                 app,
                 ["--format", "json", "user", "follow", "-"],
@@ -993,8 +1190,12 @@ class TestUserPipelines:
     def test_follow_single_username_uses_batch_envelope(self):
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+        ):
             result = runner.invoke(app, ["--format", "json", "user", "follow", "carol"])
 
         assert result.exit_code == 0
@@ -1006,13 +1207,27 @@ class TestUserPipelines:
     def test_lookup_users_collects_lookup_errors(self):
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.commands.lookup._fetch_user_lookup", side_effect=[
-                 {"ok": True, "username": "alice", "last_post_date": "2000-01-01T00:00:00+00:00", "last_post_content_text": "Alice post"},
-                 {"ok": False, "username": "bob", "error": "lookup failed", "code": 503},
-             ]):
-            result = runner.invoke(app, ["--format", "json", "lookup", "users", "--last-post", "alice", "bob"])
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch(
+                "mb.commands.lookup._fetch_user_lookup",
+                side_effect=[
+                    {
+                        "ok": True,
+                        "username": "alice",
+                        "last_post_date": "2000-01-01T00:00:00+00:00",
+                        "last_post_content_text": "Alice post",
+                    },
+                    {"ok": False, "username": "bob", "error": "lookup failed", "code": 503},
+                ],
+            ),
+        ):
+            result = runner.invoke(
+                app, ["--format", "json", "lookup", "users", "--last-post", "alice", "bob"]
+            )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -1022,9 +1237,17 @@ class TestUserPipelines:
     def test_lookup_users_reads_from_stdin(self):
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
-            result = runner.invoke(app, ["--format", "json", "lookup", "users", "--days-since-posting"], input="@alice\nbob\n")
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+        ):
+            result = runner.invoke(
+                app,
+                ["--format", "json", "lookup", "users", "--days-since-posting"],
+                input="@alice\nbob\n",
+            )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -1047,8 +1270,12 @@ class TestUserPipelines:
     def test_lookup_posts_conversation_from_stdin_agent_lines(self):
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+        ):
             result = runner.invoke(
                 app,
                 ["--format", "json", "lookup", "posts", "--conversation", "-"],
@@ -1063,8 +1290,12 @@ class TestUserPipelines:
     def test_lookup_posts_ignores_non_identifier_stdin_lines(self):
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+        ):
             result = runner.invoke(
                 app,
                 ["--format", "json", "lookup", "posts", "--conversation", "-"],
@@ -1088,9 +1319,15 @@ class TestTopLevelPipelineAliases:
     def test_unfollow_alias_reads_stdin(self):
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
-            result = runner.invoke(app, ["--format", "json", "unfollow", "-"], input="@alice\nbob\n")
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+        ):
+            result = runner.invoke(
+                app, ["--format", "json", "unfollow", "-"], input="@alice\nbob\n"
+            )
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -1131,8 +1368,12 @@ class TestUpload:
 
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)):
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+        ):
             result = runner.invoke(app, ["--format", "json", "upload", str(photo)])
 
         assert result.exit_code == 0
@@ -1142,10 +1383,19 @@ class TestUpload:
     def test_upload_remote_url(self):
         transport = _mock_transport()
         patches = _patch_config()
-        with patches[0], patches[1], patches[2], \
-             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)), \
-             patch("mb.commands.upload._download_image", return_value=("otter.jpg", b"fake-image", "image/jpeg")):
-            result = runner.invoke(app, ["--format", "json", "upload", "https://example.com/otter.jpg"])
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
+            patch(
+                "mb.commands.upload._download_image",
+                return_value=("otter.jpg", b"fake-image", "image/jpeg"),
+            ),
+        ):
+            result = runner.invoke(
+                app, ["--format", "json", "upload", "https://example.com/otter.jpg"]
+            )
 
         assert result.exit_code == 0
         data = json.loads(result.output)

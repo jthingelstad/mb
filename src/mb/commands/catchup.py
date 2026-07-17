@@ -51,16 +51,19 @@ def run(
         config.save_named_checkpoint("catchup", latest_id, profile=profile)
         advanced = True
 
-    output_or_exit({
-        "ok": True,
-        "data": {
-            "kind": "catchup",
-            "mode": mode,
-            "checkpoint": checkpoint,
-            "latest_id": latest_id,
-            "advanced": advanced,
-            "new_count": total_new if total_new is not None else len(items),
-            "truncated": truncated,
-            "items": items,
+    output_or_exit(
+        {
+            "ok": True,
+            "data": {
+                "kind": "catchup",
+                "mode": mode,
+                "checkpoint": checkpoint,
+                "latest_id": latest_id,
+                "advanced": advanced,
+                "new_count": total_new if total_new is not None else len(items),
+                "truncated": truncated,
+                "items": items,
+            },
         },
-    }, fmt)
+        fmt,
+    )

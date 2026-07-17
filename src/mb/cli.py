@@ -2,12 +2,18 @@
 
 import os
 import sys
+
 import typer
 import typer.core
 
 from mb import config
 from mb.api import MicroblogClient
-from mb.commands import blog, catchup as catchup_cmd, checkpoint, conversation, guide as guide_cmd, heartbeat as heartbeat_cmd, inbox as inbox_cmd, lookup, post, timeline, upload as upload_cmd, user
+from mb.commands import blog, checkpoint, conversation, lookup, post, timeline, user
+from mb.commands import catchup as catchup_cmd
+from mb.commands import guide as guide_cmd
+from mb.commands import heartbeat as heartbeat_cmd
+from mb.commands import inbox as inbox_cmd
+from mb.commands import upload as upload_cmd
 from mb.formatters import output
 
 
@@ -35,13 +41,17 @@ class _FlexibleGroup(typer.core.TyperGroup):
         return super().parse_args(ctx, front + rest)
 
 
-app = typer.Typer(cls=_FlexibleGroup, add_completion=False, no_args_is_help=True, rich_markup_mode=None)
+app = typer.Typer(
+    cls=_FlexibleGroup, add_completion=False, no_args_is_help=True, rich_markup_mode=None
+)
 app.add_typer(post.app, name="post", help="Publishing commands")
 app.add_typer(timeline.app, name="timeline", help="Reading/discovery commands")
 app.add_typer(user.app, name="user", help="Social graph commands")
 app.add_typer(lookup.app, name="lookup", help="Lookup additional data for pipeline inputs")
 app.add_typer(blog.app, name="blog", help="Read your own blog")
-app.add_typer(checkpoint.app, name="checkpoint", help="Manage saved checkpoints for agent workflows")
+app.add_typer(
+    checkpoint.app, name="checkpoint", help="Manage saved checkpoints for agent workflows"
+)
 
 # ── Global options ──────────────────────────────────────────
 
@@ -62,7 +72,9 @@ def get_client(ctx: typer.Context | None = None) -> MicroblogClient:
     token = config.get_token(profile=profile)
     if not token:
         fmt = get_format(ctx) if ctx else "agent"
-        output({"ok": False, "error": "No token configured. Run: mb auth <token>", "code": 401}, fmt)
+        output(
+            {"ok": False, "error": "No token configured. Run: mb auth <token>", "code": 401}, fmt
+        )
         raise SystemExit(1)
     blog_dest = None
     if ctx and ctx.obj:
@@ -89,6 +101,7 @@ def main(
     else:
         # MB_FORMAT env var as default; explicit --format flag overrides
         import click
+
         fmt_source = ctx.get_parameter_source("fmt")
         explicitly_set = fmt_source is not None and fmt_source != click.core.ParameterSource.DEFAULT
         if not explicitly_set:
@@ -102,6 +115,7 @@ def main(
 
 
 # ── Auth commands (top-level) ───────────────────────────────
+
 
 @app.command()
 def auth(
@@ -134,13 +148,21 @@ def whoami(ctx: typer.Context):
     result = client.verify_token()
     if result["ok"]:
         data = result["data"]
-        output({"ok": True, "data": {
-            "username": data.get("username", ""),
-            "url": f"https://{data.get('default_site', '')}" if data.get("default_site") else data.get("url", ""),
-            "name": data.get("name") or data.get("full_name", ""),
-            "avatar": data.get("avatar") or data.get("gravatar_url", ""),
-            "profile": get_profile(ctx),
-        }}, fmt)
+        output(
+            {
+                "ok": True,
+                "data": {
+                    "username": data.get("username", ""),
+                    "url": f"https://{data.get('default_site', '')}"
+                    if data.get("default_site")
+                    else data.get("url", ""),
+                    "name": data.get("name") or data.get("full_name", ""),
+                    "avatar": data.get("avatar") or data.get("gravatar_url", ""),
+                    "profile": get_profile(ctx),
+                },
+            },
+            fmt,
+        )
     else:
         output(result, fmt)
         raise SystemExit(1)
@@ -177,7 +199,9 @@ def guide(ctx: typer.Context):
 @app.command("following")
 def following_alias(
     ctx: typer.Context,
-    username: str = typer.Argument(None, help="Username to check following list (defaults to current user)"),
+    username: str = typer.Argument(
+        None, help="Username to check following list (defaults to current user)"
+    ),
 ):
     """List who you follow."""
     user.following(ctx, username=username)
@@ -204,8 +228,12 @@ def unfollow_alias(
 @app.command("discover")
 def discover_alias(
     ctx: typer.Context,
-    collection: str = typer.Option(None, "--collection", "-c", help="Discover collection name (e.g. books, music)"),
-    list_collections: bool = typer.Option(False, "--list", help="List curated discover collections"),
+    collection: str = typer.Option(
+        None, "--collection", "-c", help="Discover collection name (e.g. books, music)"
+    ),
+    list_collections: bool = typer.Option(
+        False, "--list", help="List curated discover collections"
+    ),
 ):
     """Show posts from a Micro.blog Discover collection."""
     timeline.discover(ctx, collection=collection, list_collections=list_collections)
@@ -215,9 +243,15 @@ def discover_alias(
 def heartbeat(
     ctx: typer.Context,
     count: int = typer.Option(3, "--count", "-n", min=1, help="Maximum timeline items to include"),
-    mention_count: int = typer.Option(3, "--mention-count", min=0, help="Maximum mention items to include"),
-    mentions_only: bool = typer.Option(False, "--mentions-only", help="Only include mention/reply activity"),
-    no_advance: bool = typer.Option(False, "--no-advance", help="Do not advance the heartbeat checkpoint after this run"),
+    mention_count: int = typer.Option(
+        3, "--mention-count", min=0, help="Maximum mention items to include"
+    ),
+    mentions_only: bool = typer.Option(
+        False, "--mentions-only", help="Only include mention/reply activity"
+    ),
+    no_advance: bool = typer.Option(
+        False, "--no-advance", help="Do not advance the heartbeat checkpoint after this run"
+    ),
 ):
     """Return a compact session-start snapshot for an agent. Advances the checkpoint by default."""
     heartbeat_cmd.run(
@@ -233,11 +267,21 @@ def heartbeat(
 def inbox(
     ctx: typer.Context,
     count: int = typer.Option(10, "--count", "-n", min=1, help="Maximum inbox items to include"),
-    reason: list[str] = typer.Option(None, "--reason", help="Filter inbox items by reason: mention or thread-reply"),
-    fresh_hours: int = typer.Option(None, "--fresh-hours", min=1, help="Only include items newer than this many hours"),
-    max_age_days: int = typer.Option(None, "--max-age-days", min=1, help="Only include items newer than this many days"),
-    all_items: bool = typer.Option(False, "--all", help="Ignore the saved inbox checkpoint and inspect all recent mentions"),
-    advance: bool = typer.Option(False, "--advance", help="Save the newest seen inbox item as the inbox checkpoint"),
+    reason: list[str] = typer.Option(
+        None, "--reason", help="Filter inbox items by reason: mention or thread-reply"
+    ),
+    fresh_hours: int = typer.Option(
+        None, "--fresh-hours", min=1, help="Only include items newer than this many hours"
+    ),
+    max_age_days: int = typer.Option(
+        None, "--max-age-days", min=1, help="Only include items newer than this many days"
+    ),
+    all_items: bool = typer.Option(
+        False, "--all", help="Ignore the saved inbox checkpoint and inspect all recent mentions"
+    ),
+    advance: bool = typer.Option(
+        False, "--advance", help="Save the newest seen inbox item as the inbox checkpoint"
+    ),
 ):
     """Return attention-oriented mention items for an agent."""
     inbox_cmd.run(
@@ -255,7 +299,9 @@ def inbox(
 def catchup(
     ctx: typer.Context,
     count: int = typer.Option(20, "--count", "-n", min=1, help="Maximum timeline items to include"),
-    advance: bool = typer.Option(False, "--advance", help="Save the newest seen post ID as the catchup checkpoint"),
+    advance: bool = typer.Option(
+        False, "--advance", help="Save the newest seen post ID as the catchup checkpoint"
+    ),
 ):
     """Return new timeline items since the last catchup checkpoint."""
     catchup_cmd.run(ctx, count=count, advance=advance)
@@ -277,6 +323,7 @@ app.add_typer(conversation.app, name="conversation", help="Thread fetching")
 
 
 # ── Poll utility (top-level) ──────────────────────────────
+
 
 @app.command()
 def poll(

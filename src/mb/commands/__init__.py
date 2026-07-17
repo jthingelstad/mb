@@ -7,16 +7,19 @@ import typer
 
 def get_client(ctx: typer.Context = None):
     from mb.cli import get_client as _get_client
+
     return _get_client(ctx)
 
 
 def get_format(ctx: typer.Context) -> str:
     from mb.cli import get_format as _get_format
+
     return _get_format(ctx)
 
 
 def get_profile(ctx: typer.Context) -> str:
     from mb.cli import get_profile as _get_profile
+
     return _get_profile(ctx)
 
 
@@ -36,13 +39,16 @@ def get_username(ctx: typer.Context) -> str:
         return result["data"].get("username", "")
 
     fmt = get_format(ctx)
-    output({"ok": False, "error": "Cannot determine username. Run: mb auth <token>", "code": 401}, fmt)
+    output(
+        {"ok": False, "error": "Cannot determine username. Run: mb auth <token>", "code": 401}, fmt
+    )
     raise SystemExit(1)
 
 
 def output_or_exit(result: dict, fmt: str) -> None:
     """Output a result and exit with code 1 if not ok."""
     from mb.formatters import output
+
     output(result, fmt)
     if not result["ok"]:
         raise SystemExit(1)
@@ -51,6 +57,7 @@ def output_or_exit(result: dict, fmt: str) -> None:
 def add_content_text(data: dict) -> None:
     """Add content_text (stripped HTML) to all items in a response."""
     from mb.formatters import strip_html
+
     for item in data.get("items", []):
         if "content_html" in item:
             item["content_text"] = strip_html(item["content_html"]).strip()
@@ -102,15 +109,11 @@ def resolve_post_url(client, post_id: str, fmt: str):
         output(listing, fmt)
         raise SystemExit(1)
     items = listing["data"].get("items", [])
-    matched = [
-        i for i in items
-        if _micropub_item_url(i).rstrip("/").endswith(post_id)
-    ]
+    matched = [i for i in items if _micropub_item_url(i).rstrip("/").endswith(post_id)]
     if not matched:
         output({"ok": False, "error": f"Post {post_id} not found", "code": 404}, fmt)
         raise SystemExit(1)
     return _micropub_item_url(matched[0])
-
 
 
 def _extract_author_username(author: dict) -> str:

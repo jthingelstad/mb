@@ -2,7 +2,7 @@
 
 import typer
 
-from mb.commands import get_client, get_format, get_username, output_or_exit, add_content_text
+from mb.commands import add_content_text, get_client, get_format, get_username, output_or_exit
 
 app = typer.Typer(no_args_is_help=True, rich_markup_mode=None)
 

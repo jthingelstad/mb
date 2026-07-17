@@ -114,27 +114,36 @@ def run(
     add_content_text(mentions_result["data"])
     mention_window = _filter_items_since(mentions_result["data"].get("items", []), checkpoint)
     mention_total = len(mention_window)
-    mention_items = _enrich_mentions(client, account.get("username", ""), mention_window[:mention_count]) if mention_count > 0 else []
+    mention_items = (
+        _enrich_mentions(client, account.get("username", ""), mention_window[:mention_count])
+        if mention_count > 0
+        else []
+    )
 
     latest_seen = _latest_seen_id(latest_timeline_items, timeline_items, mention_window)
     advanced = False
     if advance and latest_seen is not None:
         config.save_named_checkpoint("heartbeat", latest_seen, profile=profile)
         advanced = True
-    output_or_exit({
-        "ok": True,
-        "data": {
-            "kind": "heartbeat",
-            "username": account.get("username", ""),
-            "url": f"https://{account.get('default_site', '')}" if account.get("default_site") else account.get("url", ""),
-            "profile": profile,
-            "mode": "since-checkpoint" if checkpoint is not None else "bootstrap",
-            "checkpoint": checkpoint,
-            "latest_id": latest_seen,
-            "advanced": advanced,
-            "new_timeline_count": timeline_total,
-            "new_mentions_count": mention_total,
-            "timeline": timeline_items,
-            "mentions": mention_items,
+    output_or_exit(
+        {
+            "ok": True,
+            "data": {
+                "kind": "heartbeat",
+                "username": account.get("username", ""),
+                "url": f"https://{account.get('default_site', '')}"
+                if account.get("default_site")
+                else account.get("url", ""),
+                "profile": profile,
+                "mode": "since-checkpoint" if checkpoint is not None else "bootstrap",
+                "checkpoint": checkpoint,
+                "latest_id": latest_seen,
+                "advanced": advanced,
+                "new_timeline_count": timeline_total,
+                "new_mentions_count": mention_total,
+                "timeline": timeline_items,
+                "mentions": mention_items,
+            },
         },
-    }, fmt)
+        fmt,
+    )
