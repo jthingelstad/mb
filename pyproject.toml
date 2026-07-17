@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=82.0.1"]
+requires = ["setuptools>=83.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,7 +9,7 @@ description = "Command-line client for micro.blog, designed for agent use"
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
-    "typer>=0.26.8",
+    "typer>=0.27.0",
     "httpx>=0.28.1",
     "rich>=15.0.0",
 ]
