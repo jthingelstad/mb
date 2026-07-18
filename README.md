@@ -6,10 +6,10 @@ A command-line client for [micro.blog](https://micro.blog), designed for agent u
 
 ## Install
 
-Requires Python 3.11+.
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-pip install .
+uv tool install .
 ```
 
 ## Quick Start
