@@ -1,4 +1,4 @@
-## mb v2.0.0rc4 — candidate, not published
+## mb v2.0.0
 
 - Optional local stdio `mb mcp` with 23 typed tools and packaged workflow guidance. The base CLI stays lightweight and imports no MCP runtime.
 - Shared post validation/publishing, native reply, thread and mention services. Structured envelopes remain; post/upload calls have explicit major-version changes (see [migration guide](docs/migration-2.0.md)).
@@ -14,7 +14,7 @@
 - Read-only mode, structured errors and tool annotations; synthetic Codex-style stdio lifecycle tests and OpenClaw configuration example.
 - CLI fixes: refuse truncated inbox/catchup advancement; preserve pipeline record boundaries and `auth --blog`; contain transport failures and expose retry metadata; remove the undeclared Click runtime import uncovered by an isolated wheel install. Draft responses retain their preview link on the initial call.
 
-No new credentials, persistent client registration, cron changes or real posts are part of this candidate. Coordinate the installed 1.x migration before tagging or publishing a package. See [MCP contracts and remaining limitations](docs/mcp.md).
+This release does not import credentials, register clients, change cron or publish real posts during installation. Existing 1.x users should review the migration guide before replacing their executable. See [MCP contracts and remaining limitations](docs/mcp.md).
 
 ---
 

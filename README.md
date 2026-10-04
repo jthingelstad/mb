@@ -4,7 +4,7 @@ A bridge to [micro.blog](https://micro.blog), designed for agents: an agent-firs
 
 `mb` prioritizes agent-friendly output, composable commands, and zero interactive prompts, making it a good fit for AI agents and scripts.
 
-The 2.0 release candidate adds 23 typed tools, explicit acknowledgement, shared write receipts, reviewed local images, guarded draft publishing and bounded discovery/search reads. Human CLI post/upload writes save generated operation IDs; agents can supply stable retry IDs, and MCP requires them; combined photo posting and remote fetching are removed. See [MCP setup and contracts](docs/mcp.md) and [2.0 migration and adoption](docs/migration-2.0.md).
+The 2.0 release adds 23 typed tools, explicit acknowledgement, shared write receipts, reviewed local images, guarded draft publishing and bounded discovery/search reads. Human CLI post/upload writes save generated operation IDs; agents can supply stable retry IDs, and MCP requires them; combined photo posting and remote fetching are removed. See [MCP setup and contracts](docs/mcp.md) and [2.0 migration and adoption](docs/migration-2.0.md).
 
 ## Install
 
