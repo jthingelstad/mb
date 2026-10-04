@@ -11,7 +11,7 @@ from urllib.parse import unquote, urlparse
 from mb.api import MicroblogClient
 from mb.domain import _build_thread, _classify_item, _extract_author_username
 from mb.formatters import strip_html
-from mb.state import StateConflict, StateStore
+from mb.state import LEGACY_CURSOR, CheckpointReviewRequired, StateConflict, StateStore
 
 
 class AuthenticationUnavailable(RuntimeError):
@@ -281,26 +281,23 @@ class MicroblogService:
         )
 
     @staticmethod
-    def _ordered_items(result: dict, *, preserve_order: bool = False) -> dict:
+    def _feed_items(result: dict) -> dict:
+        """Validate native IDs without assigning chronological meaning to them."""
         if not result["ok"]:
             return result
         try:
             items = result["data"]["items"]
             if not isinstance(items, list) or any(
-                not isinstance(i, dict) or not str(i.get("id", "")).isdigit() for i in items
+                not isinstance(i, dict)
+                or not re.fullmatch(r"[0-9]{1,20}", str(i.get("id", "")))
+                or int(i["id"]) <= 0
+                for i in items
             ):
                 raise ValueError
-            ids = [int(i["id"]) for i in items]
+            ids = [str(int(i["id"])) for i in items]
             if len(ids) != len(set(ids)):
                 raise ValueError
-            if not preserve_order and ids != sorted(ids, reverse=True):
-                return failure(
-                    "Timeline IDs are not monotonic; checkpoint coverage cannot be proven", 502
-                )
-            return {
-                "ok": True,
-                "data": {"items": items},
-            }
+            return {"ok": True, "data": {"items": [{**i, "id": key} for i, key in zip(items, ids)]}}
         except (KeyError, TypeError, ValueError):
             return failure("Invalid timeline page; checkpoint was not advanced", 502)
 
@@ -314,7 +311,7 @@ class MicroblogService:
         )
         # Micro.blog's feed order determines pagination. IDs are unique, but
         # imported/backdated posts need not appear in numeric ID order.
-        result = self._ordered_items(result, preserve_order=True)
+        result = self._feed_items(result)
         if not result["ok"]:
             return result
         items = result["data"]["items"]
@@ -330,7 +327,7 @@ class MicroblogService:
             probe = self.client.get_timeline(
                 count=1, since_id=int(since) if since else None, before_id=int(selected[-1]["id"])
             )
-            probe = self._ordered_items(probe, preserve_order=True)
+            probe = self._feed_items(probe)
             if not probe["ok"]:
                 return probe
             if any(
@@ -355,10 +352,23 @@ class MicroblogService:
         if not identity["ok"]:
             return identity
         scope = self._scope(workflow)
-        checkpoint, revision = self.state.cursor(scope)
+        record = self.state.cursor_record(scope)
+        checkpoint, revision = record["value"], record["revision"]
+        review_required = record["scheme"] == LEGACY_CURSOR
+        anchor = (
+            str(int(checkpoint))
+            if isinstance(checkpoint, str)
+            and re.fullmatch(r"[0-9]{1,20}", checkpoint)
+            and int(checkpoint) > 0
+            else None
+        )
         previous = self._windows.get(cursor or "")
         if cursor and (
-            not previous or previous["scope"] != scope or previous["revision"] != revision
+            not previous
+            or previous["scope"] != scope
+            or previous["revision"] != revision
+            or previous["checkpoint"] != checkpoint
+            or previous["scheme"] != record["scheme"]
         ):
             return failure("Cursor expired or checkpoint changed; read a fresh window", 409)
         if previous:
@@ -367,39 +377,31 @@ class MicroblogService:
             result = (
                 self.client.get_mentions()
                 if workflow == "inbox"
-                else self.client.get_timeline(
-                    count=count, since_id=int(checkpoint) if checkpoint else None
-                )
+                else self.client.get_timeline(count=count, since_id=int(anchor) if anchor else None)
             )
-            result = self._ordered_items(result)
+            result = self._feed_items(result)
             if not result["ok"]:
                 return result
             raw = result["data"]["items"]
-            if (
-                workflow != "inbox"
-                and checkpoint
-                and any(int(i["id"]) <= int(checkpoint) for i in raw)
-            ):
-                return failure(
-                    "Timeline crossed the numeric checkpoint fence; coverage is unknown", 502
-                )
-            # Mentions is only a recent window, not a since-ID feed. A smaller
-            # numeric ID cannot prove that its publication predates our checkpoint.
-            fence = next((index for index, i in enumerate(raw) if str(i["id"]) == checkpoint), None)
-            items = raw[:fence] if workflow == "inbox" and fence is not None else raw
+            fence = next((index for index, i in enumerate(raw) if i["id"] == anchor), None)
+            items = raw[:fence] if fence is not None else raw
             complete = (
-                (checkpoint is None or fence is not None)
+                (record["scheme"] is None or fence is not None)
                 if workflow == "inbox"
-                else not raw or (workflow == "heartbeat" and checkpoint is None)
+                else not raw
+                or fence is not None
+                or (workflow == "heartbeat" and record["scheme"] is None)
             )
             window = {
                 "scope": scope,
                 "revision": revision,
                 "checkpoint": checkpoint,
+                "scheme": record["scheme"],
                 "items": items,
-                "latest": str(items[0]["id"]) if items else checkpoint,
+                "latest": items[0]["id"] if items else anchor,
                 "complete": complete,
-                "before": str(raw[-1]["id"]) if raw else None,
+                "before": raw[-1]["id"] if raw else None,
+                "seen": frozenset(i["id"] for i in raw),
             }
         selected = window["items"][:count]
         remaining = window["items"][count:]
@@ -407,31 +409,30 @@ class MicroblogService:
             before = window["before"]
             page = self.client.get_timeline(
                 count=count,
-                since_id=int(checkpoint) if checkpoint else None,
+                since_id=int(anchor) if anchor else None,
                 before_id=int(before) if before else None,
             )
-            page = self._ordered_items(page)
+            page = self._feed_items(page)
             if not page["ok"]:
                 return page
             raw = page["data"]["items"]
-            if any(int(i["id"]) >= int(before) for i in raw):
+            ids = frozenset(i["id"] for i in raw)
+            if ids & window["seen"]:
                 return failure(
-                    "Upstream pagination did not move backwards; checkpoint was not advanced", 502
+                    "Upstream pagination repeated an item; checkpoint was not advanced", 502
                 )
-            if checkpoint and any(int(i["id"]) <= int(checkpoint) for i in raw):
-                return failure(
-                    "Timeline crossed the numeric checkpoint fence; coverage is unknown", 502
-                )
-            remaining = raw
-            window["before"] = str(raw[-1]["id"]) if raw else before
-            # An empty native page proves exhaustion even if upstream caps count.
-            window["complete"] = not raw or not remaining
+            fence = next((index for index, i in enumerate(raw) if i["id"] == anchor), None)
+            remaining = raw[:fence] if fence is not None else raw
+            window["before"] = raw[-1]["id"] if raw else before
+            window["seen"] = window["seen"] | ids
+            # Native exhaustion or an exact anchor proves the bounded read is consumed.
+            window["complete"] = not raw or fence is not None
         next_cursor = None
         if remaining:
             next_cursor = secrets.token_urlsafe(24)
             self._windows[next_cursor] = {**window, "items": remaining}
         receipt = None
-        if not remaining and window["complete"] and window["latest"]:
+        if not remaining and window["complete"] and window["latest"] and not review_required:
             receipt = secrets.token_urlsafe(24)
             self._receipts[receipt] = {
                 "scope": scope,
@@ -460,17 +461,25 @@ class MicroblogService:
             "data": {
                 "kind": workflow,
                 "identity": identity["data"],
-                "mode": "bootstrap" if checkpoint is None else "since-checkpoint",
+                "mode": "checkpoint-review-required"
+                if review_required
+                else "bootstrap"
+                if record["scheme"] is None
+                else "since-checkpoint",
+                "checkpoint_status": record["scheme"] or "empty",
+                "checkpoint_review_required": review_required,
                 "checkpoint": checkpoint,
                 "revision": revision,
                 "items": entries,
                 "returned_count": len(entries),
                 "truncated": bool(remaining),
-                "coverage_complete": window["complete"] and not remaining,
-                "coverage": "recent-mentions-window"
+                "coverage_complete": window["complete"] and not remaining and not review_required,
+                "coverage": "legacy-checkpoint-review-required"
+                if review_required
+                else "recent-mentions-window"
                 if workflow == "inbox"
                 else "bootstrap-recent-baseline"
-                if workflow == "heartbeat" and checkpoint is None
+                if workflow == "heartbeat" and record["scheme"] is None
                 else "paged-timeline",
                 "next_cursor": next_cursor,
                 "ack_receipt": receipt,
@@ -501,9 +510,11 @@ class MicroblogService:
             return {
                 "ok": True,
                 "data": self.state.acknowledge(
-                    record["scope"], record["value"], record["revision"]
+                    record["scope"], record["value"], record["revision"], native=True
                 ),
             }
+        except CheckpointReviewRequired as exc:
+            return failure(str(exc), 409, reason="checkpoint_review_required")
         except StateConflict as exc:
             return failure(str(exc), 409)
 

@@ -1,10 +1,11 @@
-## mb v2.0.0rc1 — candidate, not published
+## mb v2.0.0rc3 — candidate, not published
 
 - Optional local stdio `mb mcp` with 23 typed tools and packaged workflow guidance. The base CLI stays lightweight and imports no MCP runtime.
 - Shared post validation/publishing, native reply, thread and mention services. Structured envelopes remain; post/upload calls have explicit major-version changes (see [migration guide](docs/migration-2.0.md)).
 - Verified canonical blog identity, consumer-scoped attention state, lossless timeline paging and explicit revision-checked acknowledgement. Recent mentions/source windows report limited coverage. CLI cursor behavior remains independent.
+- Native-order attention anchors and revision-CAS acknowledgement support nonmonotonic IDs; exact inbox anchors establish completeness. Additive provenance marks unverified historical checkpoints as review-required without resetting or rewriting them. Mixed-version writes invalidate trust.
 - Durable account/blog post receipts and account-scoped native reply receipts with caller operation IDs, argument fingerprints and explicit unknown outcomes. No automatic resend; interrupted pending operations require human reconciliation.
-- Review fixes: resolve canonical/custom destination URLs safely; reject malformed feed/source and write confirmations; order pagination by ID and refuse invalid pages; exclude echoed credential values from stored recovery metadata.
+- Review fixes: resolve canonical/custom destination URLs safely; reject malformed feed/source and write confirmations; preserve native pagination order and refuse overlapping or invalid pages; exclude echoed credential values from stored recovery metadata.
 - Selected-blog server-side search/categories; bounded Discover/profile/own-reply reads and public URL conversations. The existing credential lacks a required scope for URL conversations; HTTP 403 is preserved with actionable guidance and no access-mode fallback.
 - Guarded existing-draft publish using reviewed source hash; All CLI post/upload writes require caller-stable `--operation-id` and shared services; edit/delete enforce selected-blog ownership. No silently generated ID or direct legacy escape path.
 - Reviewed local image preview/upload for CLI and MCP, explicit allowed directory, Pillow decoding/normalization, metadata removal, selected destination, file hash guard and separate upload/post receipts. Alt text accompanies the post; HTTP 202 is labelled accepted/processing.

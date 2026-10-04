@@ -96,16 +96,17 @@ def test_bad_feed_page_never_yields_ack_receipt(tmp_path, payload):
         assert not service.state.path.exists()
 
 
-def test_unsorted_attention_page_refuses_unproven_checkpoint_coverage(tmp_path):
+def test_unsorted_attention_page_preserves_native_order_and_checkpoint(tmp_path):
     service, client = make_service(tmp_path)
-    client.get_timeline.return_value = {
-        "ok": True,
-        "data": {"items": [{"id": 9}, {"id": 10}]},
-    }
-    result = service.attention("catchup", count=2)
-    assert not result["ok"] and result["code"] == 502
-    assert "coverage cannot be proven" in result["error"]
-    assert not service._receipts and not service.state.path.exists()
+    client.get_timeline.side_effect = [
+        {"ok": True, "data": {"items": [{"id": 9}, {"id": 10}]}},
+        {"ok": True, "data": {"items": []}},
+    ]
+    result = service.attention("catchup", count=2)["data"]
+    assert [i["id"] for i in result["items"]] == ["9", "10"]
+    assert result["coverage_complete"]
+    assert not service.state.path.exists()
+    assert service.acknowledge(result["ack_receipt"])["data"]["checkpoint"] == "9"
 
 
 @pytest.mark.parametrize("items", [[{"id": "bad"}], [{"id": 1}, {"id": 1}], [None]])

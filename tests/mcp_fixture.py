@@ -19,6 +19,7 @@ os.environ["MB_BLOG"] = BLOG
 if os.environ.get("MB_TEST_MISSING_AUTH"):
     os.environ.pop("MB_TOKEN", None)
 posts = {}
+opaque_feed = [9, 3, 7, 2, 8, 1]
 
 
 def response(request):
@@ -33,6 +34,23 @@ def response(request):
             200, json={"title": "Agent", "items": [{"id": 10, "content_html": "Account post"}]}
         )
     if request.url.path == "/posts/all":
+        if os.environ.get("MB_TEST_OPAQUE_FEED"):
+            params = request.url.params
+            before = opaque_feed.index(int(params["before_id"])) + 1 if "before_id" in params else 0
+            since = (
+                opaque_feed.index(int(params["since_id"]))
+                if "since_id" in params
+                else len(opaque_feed)
+            )
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {"id": i}
+                        for i in opaque_feed[before:since][: min(2, int(params.get("count", "20")))]
+                    ]
+                },
+            )
         params = request.url.params
         since = int(params.get("since_id", "0"))
         before = int(params.get("before_id", "999"))
@@ -83,6 +101,8 @@ def response(request):
         if payload.get("action") == ["delete"]:
             posts.pop(payload["url"][0], None)
             return httpx.Response(204)
+        if os.environ.get("MB_TEST_OPAQUE_FEED") and 4 not in opaque_feed:
+            opaque_feed.insert(0, 4)
         url = BLOG + "post"
         posts[url] = {
             "type": ["h-entry"],
