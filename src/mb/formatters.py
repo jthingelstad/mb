@@ -102,6 +102,9 @@ def output_human(data: dict) -> None:
             console.print(f"outcome={data['outcome']}")
         if data.get("operation_id"):
             console.print(f"operation_id={data['operation_id']}")
+        if data.get("recovery_command"):
+            console.print(data["recovery_hint"], markup=False)
+            console.print(f"Inspect: {data['recovery_command']}", markup=False)
         return
 
     payload = data.get("data", {})
@@ -374,6 +377,9 @@ def output_agent(data: dict) -> None:
             print(f"outcome={data['outcome']}")
         if data.get("operation_id"):
             print(f"operation_id={data['operation_id']}")
+        if data.get("recovery_command"):
+            print(data["recovery_hint"])
+            print(f"Inspect: {data['recovery_command']}")
         return
 
     payload = data.get("data", {})

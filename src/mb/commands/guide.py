@@ -34,15 +34,17 @@ SELF-REVIEW
   mb blog categories        List all tags/categories on your blog.
 
 PUBLISHING
-  All post writes require --operation-id TASK_ID. Persist ID and exact arguments before
+  Human CLI writes may omit --operation-id; MB saves a generated ID before dispatch.
+  Each plain invocation is a new operation. Agents: persist ID and exact arguments before
   invocation; reuse both on retries. Never use a fresh ID after uncertainty. Share one
   --state-file across CLI/MCP. Edit/delete require an owned exact URL or numeric ID.
   mb operation-status ID   Inspect a receipt; unknown/pending requires operator read-back.
   Combined --photo is removed; review and upload separately with a different ID.
-  mb post new "Hello" --operation-id TASK_CREATE
+  mb post new "Hello"                    Human use
+  mb post new "Hello" --operation-id TASK_CREATE  Agent retry ID
                             Create a post. Accepts --title, --file, --draft, --photo-url, --category.
                             Use this for long-form posts or posts with titles.
-  mb post short "Hello" --operation-id TASK_SHORT
+  mb post short "Hello"
                             Short-form post, no title. Optional --strict-300 character limit.
                             Use this for microblog-style posts (like tweets). If you are unsure
                             which to use, post new is the safe default.
@@ -51,6 +53,7 @@ PUBLISHING
   mb post reply <id> "text" --operation-id TASK_REPLY
                             Reply to a post natively.
   mb post delete <id> --operation-id TASK_DELETE
+  mb operation-status --latest           Read newest saved receipt; never resend unknown writes
                             Delete a post.
   mb post new --dry-run "x" Validate without posting. Useful for testing content before committing.
 

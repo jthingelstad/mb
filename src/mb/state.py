@@ -176,6 +176,19 @@ class StateStore:
         row = self._operation_row(scope, operation_id)
         return self._receipt(row, operation_id) if row else None
 
+    def latest_operation(self, scope: str) -> tuple[int, dict] | None:
+        """Read the newest claimed receipt in one verified scope without changing state."""
+        if not self.path.exists():
+            return None
+        with closing(sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True)) as db:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE name='operations'").fetchone():
+                return None
+            row = db.execute(
+                "SELECT rowid,id,fingerprint,result FROM operations WHERE scope=? ORDER BY rowid DESC LIMIT 1",
+                (scope,),
+            ).fetchone()
+            return (row[0], self._receipt(row[2:], row[1])) if row else None
+
     def lookup(self, scope: str, operation_id: str, fingerprint: str) -> dict | None:
         row = self._operation_row(scope, operation_id)
         if row and row[0] != fingerprint:

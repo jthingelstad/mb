@@ -4,18 +4,18 @@ This is a major-version candidate. The installed 1.1 tool, existing credentials 
 
 ## Breaking write changes
 
-All CLI post creation (including `short`), replies, edits, deletes, publishing and media uploads use the same services and receipts as MCP. A caller-stable operation ID is required. MB never silently generates one. An ID has 1–128 letters, digits or `_.:-`. Choose it once for the intended action, persist it with the exact arguments **before invocation**, and reuse both after a retry, restart or transport failure. Changed arguments with the same ID conflict. A new ID means a new action, not a retry.
+All CLI post creation (including `short`), replies, edits, deletes, publishing and media uploads use the same services and receipts as MCP. CLI operation IDs are optional: MB generates and saves one before dispatch when omitted. Every plain invocation starts a new action. MCP requires caller-stable IDs, and CLI scripts/agents should supply them for exact retry deduplication. An ID has 1–128 letters, digits or `_.:-`. Choose it once for the intended action, persist it with the exact arguments **before invocation**, and reuse both after a retry, restart or transport failure. Changed arguments with the same ID conflict. A new ID means a new action, not a retry.
 
 | 1.1 behavior | 2.0 behavior |
 | --- | --- |
-| `mb post new "Hello"` sends immediately | Refuses without `--operation-id`; `mb post new "Hello" --operation-id task-42-create` uses a durable receipt |
-| `mb post short "Hello"` | Add the stable caller ID; `--dry-run` still works without one and creates no receipt |
-| `mb post reply 123 "Thanks"` | `mb post reply 123 "Thanks" --operation-id task-42-reply`; account-scoped receipts deduplicate across selected-blog profiles |
-| `mb post edit URL --content "Updated"` | Add `--operation-id task-42-edit`; selected-blog ownership and source lookup must succeed before dispatch |
-| `mb post delete URL` | Add `--operation-id task-42-delete`; the same ownership guard applies, even to exact URLs |
+| `mb post new "Hello"` sends immediately | `mb post new "Hello"` generates and saves a durable receipt; optional `--operation-id task-42-create` deduplicates exact retries |
+| `mb post short "Hello"` | Works without an ID; optionally add a stable retry ID. `--dry-run` creates no receipt |
+| `mb post reply 123 "Thanks"` | The same command works with a generated ID; optional `--operation-id task-42-reply` deduplicates across selected-blog profiles |
+| `mb post edit URL --content "Updated"` | Optional `--operation-id task-42-edit` for retries; selected-blog ownership and source lookup must succeed before dispatch |
+| `mb post delete URL` | Optional `--operation-id task-42-delete` for retries; the same ownership guard applies, even to exact URLs |
 | Edit/delete can resolve a slug by suffix from a list | Use an exact post URL or native numeric ID; ambiguous slug resolution is removed from writes |
 | `mb post new "Caption" --photo image.jpg` uploads then creates | Refuses before upload, even with an ID. Explicitly review/upload, then create with its URL and a separate ID |
-| `mb upload /absolute/image.jpg` or a remote URL | Refuses with migration guidance; no automatic remote fetch. Use a relative image under explicit `--media-root` plus reviewed hash, alt and stable ID |
+| `mb upload /absolute/image.jpg` or a remote URL | Refuses with migration guidance; no automatic remote fetch. Use a relative image under explicit `--media-root` plus reviewed hash and alt; optionally add a stable retry ID |
 | `mb upload relative.png` | Alias for `media upload`, with the same required review contract and shared receipt |
 | 1.x stateless post writes | Durable local SQLite write receipts; preserve and share the state file across cooperating CLI/MCP processes |
 
@@ -52,3 +52,9 @@ The existing credential returns `403 Token missing required scope` on URL conver
 5. When specifically authorized, coordinate one controlled image/draft/create/publish/read-back check with the chosen image, caption, alt, destination and stable IDs. Check actual media availability, stored alt and rendered output. No live upload/publish was performed for this candidate.
 6. Register persistent clients and switch callers/PATH/cron only with coordinated operator approval after those checks. Preserve the 1.1 executable for rollback; stop candidate writers before rollback and retain the receipt database. 1.1 does not consult 2.0 receipts, so rollback cannot blindly replay uncertain candidate actions.
 7. Tag/package or implement the proposed Homebrew tap only after release review and its separate install/upgrade/bottle checks. The current draft is unmerged and unpublished; no tap or client registration is installed.
+
+### Human use and recovery
+
+Ordinary CLI post create/short/reply/edit/delete/publish and media/upload commands accept an omitted operation ID. MB creates a unique ID and persists its claim before dispatch, using the same ownership, reviewed-source/media and receipt guards as explicit IDs. Success includes the saved ID; unknown outcomes include a copyable read-only recovery command. `mb operation-status --latest` finds the newest claimed receipt in the selected account/blog and account-wide reply scope; use `--scope blog` or `--scope reply` to narrow it. It does not search for the oldest unresolved operation or reconcile remote state.
+
+A repeated plain command is a new operation and can duplicate a post or upload. MB does not deduplicate by matching content: two intentional identical posts must remain possible. On uncertainty, inspect the receipt and the remote result before deciding what to do. Exact retries with the original `--operation-id` return the saved receipt without redispatch, including unknown outcomes. There is no automatic resend or receipt-reset command. MCP still requires a caller-stable ID; scripts and agents should supply one in the CLI too.

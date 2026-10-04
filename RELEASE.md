@@ -1,4 +1,4 @@
-## mb v2.0.0rc3 — candidate, not published
+## mb v2.0.0rc4 — candidate, not published
 
 - Optional local stdio `mb mcp` with 23 typed tools and packaged workflow guidance. The base CLI stays lightweight and imports no MCP runtime.
 - Shared post validation/publishing, native reply, thread and mention services. Structured envelopes remain; post/upload calls have explicit major-version changes (see [migration guide](docs/migration-2.0.md)).
@@ -7,7 +7,7 @@
 - Durable account/blog post receipts and account-scoped native reply receipts with caller operation IDs, argument fingerprints and explicit unknown outcomes. No automatic resend; interrupted pending operations require human reconciliation.
 - Review fixes: resolve canonical/custom destination URLs safely; reject malformed feed/source and write confirmations; preserve native pagination order and refuse overlapping or invalid pages; exclude echoed credential values from stored recovery metadata.
 - Selected-blog server-side search/categories; bounded Discover/profile/own-reply reads and public URL conversations. The existing credential lacks a required scope for URL conversations; HTTP 403 is preserved with actionable guidance and no access-mode fallback.
-- Guarded existing-draft publish using reviewed source hash; All CLI post/upload writes require caller-stable `--operation-id` and shared services; edit/delete enforce selected-blog ownership. No silently generated ID or direct legacy escape path.
+- Guarded existing-draft publish using reviewed source hash. Human CLI post/upload writes generate and persist an ID before dispatch when omitted; explicit stable IDs still deduplicate exact agent/script retries. Unknown outcomes include a copyable read-only recovery command, and `operation-status --latest` inspects the newest claimed receipt. Rerunning a plain command starts a new operation. MCP still requires IDs; ownership/media/source guards and no-auto-resend behavior remain.
 - Reviewed local image preview/upload for CLI and MCP, explicit allowed directory, Pillow decoding/normalization, metadata removal, selected destination, file hash guard and separate upload/post receipts. Alt text accompanies the post; HTTP 202 is labelled accepted/processing.
 - Removed combined `--photo` and implicit absolute-path/remote uploads with clear migration errors. `upload` aliases the reviewed relative-file media workflow; dry-run needs no ID.
 - Keyword mute and DELETE unmute/unblock contract fixes. Content-index and Homebrew release plans documented; neither cache nor tap is implemented.

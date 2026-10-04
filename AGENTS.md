@@ -86,7 +86,7 @@ Legacy flat config is still supported for the default profile and auto-migrates 
 
 ## CLI Surface
 
-2.0 post/upload writes require caller-stable `--operation-id`, shared services and selected-blog guards. Preserve IDs and exact arguments across retries. Never silently generate a new ID for an uncertain outcome. Combined `--photo` and implicit/remote uploads are removed. See [migration/adoption](docs/migration-2.0.md).
+2.0 CLI post/upload writes generate and persist an operation ID when omitted, using shared services and selected-blog guards. Each plain invocation starts a new operation. Agents should supply caller-stable `--operation-id` and preserve exact arguments across retries; MCP still requires an ID. After uncertainty, inspect the printed recovery command or `mb operation-status --latest`; never rerun a plain write as a recovery attempt. Combined `--photo` and implicit/remote uploads are removed. See [migration/adoption](docs/migration-2.0.md).
 
 Global flags can appear before or after the command:
 
@@ -124,22 +124,22 @@ mb poll --since <id> --interval 30
 Post commands:
 
 ```text
-mb post new "Hello" --operation-id example-1
-mb post short "Hello" --operation-id example-2
-mb post new --content "Hello" --operation-id example-3
-mb post new --file post.md --operation-id example-4
-mb post new "Draft text" --draft --operation-id example-5
-mb post short --strict-300 "Hello" --operation-id example-6
+mb post new "Hello"
+mb post short "Hello"
+mb post new --content "Hello"
+mb post new --file post.md
+mb post new "Draft text" --draft
+mb post short --strict-300 "Hello"
 mb --media-root ./reviewed media preview image.jpg --alt "desc"  # Upload separately after review
-mb post new "Caption" --photo-url https://... --operation-id example-7
-mb post new "Tagged text" --category tag --operation-id example-8
+mb post new "Caption" --photo-url https://...
+mb post new "Tagged text" --category tag
 mb post new --dry-run "Hello"
 mb post get <id-or-url>
-mb post edit <id-or-url> --content "Updated" --operation-id example-9
-mb post edit <id-or-url> --title "Updated" --operation-id example-10
-mb post edit <id-or-url> --category tag --operation-id example-11
-mb post reply <id-or-url> "Reply text" --operation-id example-12
-mb post delete <id-or-url> --operation-id example-13
+mb post edit <id-or-url> --content "Updated"
+mb post edit <id-or-url> --title "Updated"
+mb post edit <id-or-url> --category tag
+mb post reply <id-or-url> "Reply text"
+mb post delete <id-or-url>
 mb post list
 mb post list --drafts
 ```
@@ -257,7 +257,7 @@ mb catchup --advance
 - `mb inbox` uses its own `inbox_checkpoint`
 - `mb checkpoint ...` is the first-class cursor management surface for `timeline`, `heartbeat`, `inbox`, and `catchup`
 - selective inbox filters are for inspection, not cursor advancement; do not combine `mb inbox --advance` with `--reason`, `--fresh-hours`, or `--max-age-days`
-- `mb upload` aliases reviewed `media upload`: relative image under explicit `--media-root`, alt, preview hash and caller-stable ID; no remote fetching
+- `mb upload` aliases reviewed `media upload`: relative image under explicit `--media-root`, alt and preview hash; optional caller-stable retry ID; no remote fetching
 
 Blog commands:
 
