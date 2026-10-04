@@ -4,7 +4,7 @@ from pathlib import Path
 
 import typer
 
-from mb.commands import get_format, get_service, output_or_exit
+from mb.commands import cli_write, get_format, get_service, output_or_exit
 
 
 def run(
@@ -21,7 +21,7 @@ def run(
                 "ok": False,
                 "error": "Legacy path/URL upload was removed in 2.0. Save the image under an "
                 "explicit --media-root, run media preview with its relative path and --alt, "
-                "then media upload with the reviewed --sha256 and stable --operation-id. "
+                "then media upload with the reviewed --sha256. "
                 "MB does not fetch remote images.",
                 "code": 400,
                 "outcome": "not_applied",
@@ -30,9 +30,11 @@ def run(
         )
         return
     output_or_exit(
-        get_service(ctx).write(
+        cli_write(
+            ctx,
+            get_service(ctx),
             "media_upload",
-            operation_id or "",
+            operation_id,
             dict(file=source, alt=alt or "", sha256=sha256 or ""),
         ),
         get_format(ctx),

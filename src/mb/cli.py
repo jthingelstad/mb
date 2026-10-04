@@ -332,9 +332,13 @@ def upload(
     source: str = typer.Argument(..., help="Reviewed relative image under --media-root"),
     alt: str = typer.Option(None, "--alt", help="Alt text for the uploaded image"),
     sha256: str | None = typer.Option(None, "--sha256", help="Input hash from media preview"),
-    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable caller upload ID"),
+    operation_id: str | None = typer.Option(
+        None,
+        "--operation-id",
+        help="Optional stable retry ID; omitted IDs start a new saved operation",
+    ),
 ):
-    """Alias for media upload; requires the reviewed hash, alt text and stable ID."""
+    """Alias for media upload; requires the reviewed hash and alt text."""
     upload_cmd.run(ctx, source=source, alt=alt, sha256=sha256, operation_id=operation_id)
 
 
@@ -443,10 +447,29 @@ def mcp_command(
 @app.command("operation-status")
 def operation_status(
     ctx: typer.Context,
-    operation_id: str = typer.Argument(...),
+    operation_id: str | None = typer.Argument(None),
+    latest: bool = typer.Option(
+        False, "--latest", help="Inspect the newest receipt in this account/blog"
+    ),
     scope: str | None = typer.Option(None, help="Receipt scope: blog or reply"),
 ):
     """Read the shared CLI/MCP durable write receipt."""
-    from mb.commands import get_service, output_or_exit
+    from mb.commands import get_service, output_or_exit, with_cli_recovery
 
-    output_or_exit(get_service(ctx).operation_status(operation_id, scope), get_format(ctx))
+    if latest == (operation_id is not None):
+        output_or_exit(
+            {
+                "ok": False,
+                "error": "Provide an operation ID or --latest, but not both",
+                "code": 400,
+            },
+            get_format(ctx),
+        )
+        return
+    service = get_service(ctx)
+    if latest:
+        result = service.latest_operation_status(scope)
+    else:
+        assert operation_id is not None
+        result = service.operation_status(operation_id, scope)
+    output_or_exit(with_cli_recovery(ctx, service, result, scope), get_format(ctx))

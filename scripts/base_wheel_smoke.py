@@ -4,6 +4,8 @@ import importlib.util
 import json
 import sys
 from importlib.resources import files
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import httpx
@@ -33,7 +35,7 @@ requests = []
 
 def forbid_http(request):
     requests.append(request)
-    raise AssertionError("Missing-ID or migration refusal must precede HTTP")
+    raise AssertionError("Migration refusal must precede HTTP")
 
 
 def synthetic_client(token):
@@ -50,10 +52,6 @@ with (
     patch("mb.config.get_blog", return_value=None),
     patch("mb.cli.MicroblogClient", side_effect=synthetic_client),
 ):
-    missing_id = runner.invoke(app, ["--format", "json", "post", "new", "Synthetic"])
-    assert missing_id.exit_code == 1, missing_id.exception
-    envelope = json.loads(missing_id.output)
-    assert envelope["outcome"] == "not_applied" and "--operation-id" in envelope["error"]
     combined = runner.invoke(
         app, ["--format", "json", "post", "new", "Caption", "--photo", "x.png"]
     )
@@ -63,4 +61,46 @@ with (
     remote = runner.invoke(app, ["--format", "json", "upload", "https://example.test/image.png"])
     assert remote.exit_code == 1 and json.loads(remote.output)["outcome"] == "not_applied"
 assert requests == []
-print("Installed base wheel: mandatory caller IDs and removed implicit photo/URL paths verified.")
+print("Installed base wheel: removed implicit photo/URL paths verified.")
+
+# Human writes use the installed shared service and temporary receipts, with mocked HTTP.
+
+
+def human_client(token):
+    def respond(request):
+        if request.url.path == "/account/verify":
+            return httpx.Response(200, json={"username": "synthetic"})
+        if request.url.params.get("q") == "config":
+            return httpx.Response(
+                200, json={"destination": [{"uid": "https://synthetic.micro.blog/"}]}
+            )
+        assert request.method == "POST" and request.url.path == "/micropub"
+        return httpx.Response(
+            201, headers={"Location": "https://synthetic.micro.blog/created.html"}
+        )
+
+    client = MicroblogClient(token)
+    client._client.close()
+    client._client = httpx.Client(
+        base_url="https://micro.blog", transport=httpx.MockTransport(respond)
+    )
+    return client
+
+
+with (
+    TemporaryDirectory() as directory,
+    patch("mb.config.get_token", return_value="synthetic"),
+    patch("mb.config.get_blog", return_value=None),
+    patch("mb.cli.MicroblogClient", side_effect=human_client),
+):
+    args = ["--format", "json", "--state-file", str(Path(directory) / "receipts.sqlite")]
+    posted = runner.invoke(app, [*args, "post", "new", "Synthetic"])
+    assert posted.exit_code == 0, posted.exception
+    receipt = json.loads(posted.output)
+    assert receipt["operation_id"].startswith("cli-") and receipt["outcome"] == "applied"
+    latest = runner.invoke(app, [*args, "operation-status", "--latest"])
+    assert latest.exit_code == 0, latest.exception
+    assert json.loads(latest.output)["operation_id"] == receipt["operation_id"]
+print(
+    "Installed base wheel: human write generates a durable receipt and --latest recovers it with mocked HTTP."
+)

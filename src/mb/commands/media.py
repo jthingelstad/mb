@@ -2,7 +2,7 @@
 
 import typer
 
-from mb.commands import get_format, get_service, output_or_exit
+from mb.commands import cli_write, get_format, get_service, output_or_exit
 
 app = typer.Typer(no_args_is_help=True, rich_markup_mode=None)
 
@@ -21,12 +21,20 @@ def upload(
     file: str = typer.Argument(...),
     alt: str = typer.Option(..., "--alt"),
     sha256: str = typer.Option(..., "--sha256"),
-    operation_id: str = typer.Option(..., "--operation-id"),
+    operation_id: str | None = typer.Option(
+        None,
+        "--operation-id",
+        help="Optional stable retry ID; omitted IDs start a new saved operation",
+    ),
 ):
     """Upload exactly the reviewed image with a durable outcome receipt."""
     output_or_exit(
-        get_service(ctx).write(
-            "media_upload", operation_id, dict(file=file, alt=alt, sha256=sha256)
+        cli_write(
+            ctx,
+            get_service(ctx),
+            "media_upload",
+            operation_id,
+            dict(file=file, alt=alt, sha256=sha256),
         ),
         get_format(ctx),
     )

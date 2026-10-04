@@ -7,6 +7,7 @@ import typer
 
 from mb.commands import (
     add_content_text,
+    cli_write,
     extract_post_id,
     get_client,
     get_format,
@@ -103,7 +104,7 @@ def new(
     operation_id: str | None = typer.Option(
         None,
         "--operation-id",
-        help="Required stable caller ID; preserve it and arguments across retries",
+        help="Optional stable retry ID; omitted IDs start a new saved operation",
     ),
 ):
     """Create a new post."""
@@ -137,7 +138,7 @@ def new(
         output(
             {
                 "ok": False,
-                "error": "Combined --photo upload/post was removed in 2.0. Use media preview/upload with a separate stable ID, then --photo-url and a post operation ID",
+                "error": "Combined --photo upload/post was removed in 2.0. Use media preview/upload, then attach the returned URL with --photo-url",
                 "code": 400,
                 "outcome": "not_applied",
             },
@@ -174,7 +175,7 @@ def new(
         photo_alt=alt,
         categories=category or None,
     )
-    result = get_service(ctx, client).write("post_create", operation_id or "", arguments)
+    result = cli_write(ctx, get_service(ctx, client), "post_create", operation_id, arguments)
     output_or_exit(result, fmt)
 
 
@@ -204,7 +205,7 @@ def short(
     operation_id: str | None = typer.Option(
         None,
         "--operation-id",
-        help="Required stable caller ID; preserve it and arguments across retries",
+        help="Optional stable retry ID; omitted IDs start a new saved operation",
     ),
 ):
     """Create a short-form post without a title."""
@@ -254,7 +255,7 @@ def short(
         output(
             {
                 "ok": False,
-                "error": "Combined --photo upload/post was removed in 2.0. Use media preview/upload with a separate stable ID, then --photo-url and a post operation ID",
+                "error": "Combined --photo upload/post was removed in 2.0. Use media preview/upload, then attach the returned URL with --photo-url",
                 "code": 400,
                 "outcome": "not_applied",
             },
@@ -292,7 +293,7 @@ def short(
         photo_alt=alt,
         categories=category or None,
     )
-    result = get_service(ctx, client).write("post_create", operation_id or "", arguments)
+    result = cli_write(ctx, get_service(ctx, client), "post_create", operation_id, arguments)
     if result.get("ok"):
         result["data"]["short"] = True
         result["data"]["char_count"] = char_count
@@ -328,7 +329,7 @@ def edit(
     operation_id: str | None = typer.Option(
         None,
         "--operation-id",
-        help="Required stable caller ID; preserve it and arguments across retries",
+        help="Optional stable retry ID; omitted IDs start a new saved operation",
     ),
 ):
     """Edit an existing post."""
@@ -352,9 +353,11 @@ def edit(
         raise SystemExit(1)
 
     output_or_exit(
-        get_service(ctx, client).write(
+        cli_write(
+            ctx,
+            get_service(ctx, client),
             "post_edit",
-            operation_id or "",
+            operation_id,
             dict(identifier=post_id, content=content, title=title, categories=category),
         ),
         fmt,
@@ -381,7 +384,7 @@ def reply(
     operation_id: str | None = typer.Option(
         None,
         "--operation-id",
-        help="Required stable caller ID; preserve it and arguments across retries",
+        help="Optional stable retry ID; omitted IDs start a new saved operation",
     ),
 ):
     """Reply to a post via the native micro.blog API."""
@@ -404,8 +407,12 @@ def reply(
         raise SystemExit(1)
 
     output_or_exit(
-        get_service(ctx, client).write(
-            "post_reply", operation_id or "", dict(post_id=str(numeric_id), content=content)
+        cli_write(
+            ctx,
+            get_service(ctx, client),
+            "post_reply",
+            operation_id,
+            dict(post_id=str(numeric_id), content=content),
         ),
         fmt,
     )
@@ -418,7 +425,7 @@ def delete(
     operation_id: str | None = typer.Option(
         None,
         "--operation-id",
-        help="Required stable caller ID; preserve it and arguments across retries",
+        help="Optional stable retry ID; omitted IDs start a new saved operation",
     ),
 ):
     """Delete a post."""
@@ -427,7 +434,9 @@ def delete(
     client = get_client(ctx)
 
     output_or_exit(
-        get_service(ctx, client).write("post_delete", operation_id or "", dict(identifier=post_id)),
+        cli_write(
+            ctx, get_service(ctx, client), "post_delete", operation_id, dict(identifier=post_id)
+        ),
         fmt,
     )
 
@@ -457,12 +466,20 @@ def publish(
     ctx: typer.Context,
     identifier: str = typer.Argument(..., help="Existing draft URL or numeric ID"),
     source_hash: str = typer.Option(..., "--source-hash", help="Reviewed post get source hash"),
-    operation_id: str = typer.Option(..., "--operation-id", help="Stable publish receipt ID"),
+    operation_id: str | None = typer.Option(
+        None,
+        "--operation-id",
+        help="Optional stable retry ID; omitted IDs start a new saved operation",
+    ),
 ):
     """Publish an unchanged, reviewed draft at its existing URL."""
     output_or_exit(
-        get_service(ctx).write(
-            "post_publish", operation_id, dict(identifier=identifier, source_hash=source_hash)
+        cli_write(
+            ctx,
+            get_service(ctx),
+            "post_publish",
+            operation_id,
+            dict(identifier=identifier, source_hash=source_hash),
         ),
         get_format(ctx),
     )

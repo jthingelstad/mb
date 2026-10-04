@@ -816,6 +816,23 @@ class MicroblogService:
         self.state.finish(scope, operation_id, stored)
         return result
 
+    def latest_operation_status(self, scope: str | None = None) -> dict:
+        identity = self.identity()
+        if not identity["ok"]:
+            return identity
+        if scope not in {None, "blog", "reply"}:
+            return failure("Use blog or reply receipt scope")
+        receipts = [
+            (receipt[0], {**receipt[1], "receipt_scope": name})
+            for name, key in {"blog": self._scope(), "reply": self._reply_scope()}.items()
+            if (scope is None or name == scope) and (receipt := self.state.latest_operation(key))
+        ]
+        return (
+            max(receipts, key=lambda r: r[0])[1]
+            if receipts
+            else failure("Operation not found", 404)
+        )
+
     def operation_status(self, operation_id: str, scope: str | None = None) -> dict:
         identity = self.identity()
         if not identity["ok"]:

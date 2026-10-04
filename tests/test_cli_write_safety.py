@@ -1,7 +1,7 @@
 """Real CLI routing and durable retry behavior with synthetic HTTP only."""
 
 import json
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 from unittest.mock import patch
 from urllib.parse import parse_qs
 
@@ -25,6 +25,7 @@ class Harness:
         self.requests = []
         self.outcome = outcome
         self.unavailable = False
+        self.draft = False
 
     @property
     def writes(self):
@@ -60,7 +61,14 @@ class Harness:
                         },
                     )
                 return httpx.Response(
-                    200, json={"type": ["h-entry"], "properties": {"content": ["old"]}}
+                    200,
+                    json={
+                        "type": ["h-entry"],
+                        "properties": {
+                            "content": ["old"],
+                            **({"post-status": ["draft"]} if self.draft else {}),
+                        },
+                    },
                 )
             if self.outcome == "timeout":
                 raise httpx.ReadTimeout("synthetic", request=request)
@@ -105,16 +113,69 @@ class Harness:
         ["post", "reply", "12", "Hello"],
         ["post", "edit", URL, "--content", "Hello"],
         ["post", "delete", URL],
-        ["upload", "image.png", "--alt", "Blue"],
     ],
 )
-def test_all_implicit_writes_refuse_before_http(tmp_path, args):
+def test_human_writes_generate_saved_distinct_receipts(tmp_path, args):
     harness = Harness(tmp_path)
-    result, data = harness.invoke(args)
-    assert result.exit_code == 1 and data["outcome"] == "not_applied"
-    assert "--operation-id" in data["error"] and "reuse" in data["error"]
-    assert harness.requests == []
-    assert not (tmp_path / "receipts.sqlite").exists()
+    first, data = harness.invoke(args)
+    assert first.exit_code == 0 and data["outcome"] == "applied"
+    assert data["operation_id"].startswith("cli-")
+    _, status = harness.invoke(["operation-status", data["operation_id"]])
+    assert status["operation_id"] == data["operation_id"]
+    _, latest = harness.invoke(["operation-status", "--latest"])
+    assert latest["operation_id"] == status["operation_id"]
+    assert latest["receipt_scope"] == ("reply" if args[1] == "reply" else "blog")
+    _, second = harness.invoke(args)
+    assert second["operation_id"] != data["operation_id"]
+    assert len(harness.writes) == 2  # A plain rerun is intentionally a new operation.
+
+
+@pytest.mark.parametrize("outcome", ["timeout", "server", "malformed"])
+def test_generated_uncertain_receipt_has_readonly_recovery(tmp_path, outcome):
+    import shlex
+
+    harness = Harness(tmp_path, outcome)
+    _, data = harness.invoke(["post", "new", "Hello"])
+    assert data["outcome"] == "unknown" and data["operation_id"].startswith("cli-")
+    assert "may duplicate" in data["recovery_hint"]
+    command = shlex.split(data["recovery_command"])
+    assert command[0] == "mb" and command[-2:] == ["--scope", "blog"]
+    _, recovered = harness.invoke(command[1:])
+    _, latest = harness.invoke(["operation-status", "--latest"])
+    assert recovered["operation_id"] == latest["operation_id"] == data["operation_id"]
+    assert recovered["outcome"] == latest["outcome"] == "unknown"
+    _, retry = harness.invoke(["post", "new", "Hello", "--operation-id", data["operation_id"]])
+    assert retry["outcome"] == "unknown" and len(harness.writes) == 1
+
+
+def test_missing_upload_hash_still_refuses_without_dispatch(tmp_path):
+    harness = Harness(tmp_path)
+    _, data = harness.invoke(["upload", "image.png", "--alt", "Blue"])
+    assert not data["ok"] and "sha256" in data["error"]
+    assert harness.requests == [] and not (tmp_path / "receipts.sqlite").exists()
+
+
+@pytest.mark.parametrize("command", [["operation-status"], ["operation-status", "id", "--latest"]])
+def test_receipt_selector_refuses_before_auth(tmp_path, command):
+    harness = Harness(tmp_path)
+    _, data = harness.invoke(command)
+    assert data["code"] == 400 and harness.requests == []
+
+
+def test_latest_receipt_isolates_verified_account_blog_and_reply_scope(tmp_path):
+    harness = Harness(tmp_path)
+    _, blog = harness.invoke(["post", "new", "Hello"])
+    _, reply = harness.invoke(["post", "reply", "12", "Hello"], blog=SECOND)
+    _, latest = harness.invoke(["operation-status", "--latest"])
+    assert latest["operation_id"] == reply["operation_id"]
+    _, latest_blog = harness.invoke(["operation-status", "--latest", "--scope", "blog"])
+    assert latest_blog["operation_id"] == blog["operation_id"]
+    _, other = harness.invoke(["operation-status", "--latest"], username="other")
+    assert other["code"] == 404
+    _, second_blog = harness.invoke(
+        ["operation-status", "--latest", "--scope", "blog"], blog=SECOND
+    )
+    assert second_blog["code"] == 404 and len(harness.writes) == 2
 
 
 @pytest.mark.parametrize(
@@ -329,3 +390,118 @@ def test_cli_scoped_status_refuses_receipt_collision(tmp_path):
         harness.invoke(["operation-status", "shared", "--scope", "blog"])[1]["data"]["url"]
         == BLOG + "created.html"
     )
+
+
+@pytest.mark.parametrize("verb", ["media", "upload"])
+def test_human_upload_keeps_reviewed_hash_guard_and_saved_receipt(tmp_path, verb):
+    import hashlib
+
+    content = image_bytes()
+    (tmp_path / "image.png").write_bytes(content)
+    harness = Harness(tmp_path)
+    args = ["media", "upload"] if verb == "media" else ["upload"]
+    args += ["image.png", "--alt", "Blue", "--sha256", hashlib.sha256(content).hexdigest()]
+    _, data = harness.invoke(args)
+    assert data["ok"] and data["operation_id"].startswith("cli-") and len(harness.writes) == 1
+    (tmp_path / "image.png").unlink()
+    _, receipt = harness.invoke([*args, "--operation-id", data["operation_id"]])
+    assert receipt["outcome"] == "applied" and len(harness.writes) == 1
+
+
+def test_latest_recovers_pending_claim_after_terminal_loss_without_mutating(tmp_path):
+    from mb.state import StateStore
+
+    path = tmp_path / "receipts.sqlite"
+    state = StateStore(path)
+    scope = json.dumps(["agent", BLOG])
+    state.claim(scope, "cli-interrupted", state.fingerprint("post_create", {"content": "Hello"}))
+    before = path.read_bytes()
+    harness = Harness(tmp_path)
+    _, data = harness.invoke(["operation-status", "--latest"])
+    assert data["outcome"] == "unknown" and data["operation_id"] == "cli-interrupted"
+    assert "--scope blog" in data["recovery_command"]
+    assert path.read_bytes() == before and not harness.writes
+
+
+def test_generated_id_is_claimed_before_dispatch(tmp_path):
+    import sqlite3
+
+    harness = Harness(tmp_path)
+    from mb.api import MicroblogClient
+
+    original = MicroblogClient.micropub_create
+
+    def check_claim(client, *args, **kwargs):
+        with closing(sqlite3.connect(tmp_path / "receipts.sqlite")) as db:
+            rows = db.execute("SELECT id,status,result FROM operations").fetchall()
+        assert len(rows) == 1 and rows[0][0].startswith("cli-")
+        assert rows[0][1:] == ("pending", None)
+        return original(client, *args, **kwargs)
+
+    with patch.object(MicroblogClient, "micropub_create", check_claim):
+        _, data = harness.invoke(["post", "new", "Hello"])
+    assert data["ok"] and len(harness.writes) == 1
+
+
+@pytest.mark.parametrize("fmt", ["human", "agent"])
+def test_uncertain_recovery_is_visible_in_readable_formats(tmp_path, fmt):
+    from mb.formatters import output
+
+    harness = Harness(tmp_path, "timeout")
+    _, data = harness.invoke(["post", "new", "Hello"])
+    import io
+    from contextlib import redirect_stdout
+
+    stream = io.StringIO()
+    with redirect_stdout(stream):
+        output(data, fmt)
+    rendered = stream.getvalue()
+    assert "operation-status" in rendered and "may duplicate" in rendered
+    assert len(harness.writes) == 1
+
+
+def test_latest_unknown_recovery_disambiguates_same_id_in_blog_and_reply(tmp_path):
+    import shlex
+
+    harness = Harness(tmp_path)
+    harness.invoke(["post", "new", "Hello", "--operation-id", "shared"])
+    harness.outcome = "timeout"
+    harness.invoke(["post", "reply", "12", "Hello", "--operation-id", "shared"])
+    _, latest = harness.invoke(["operation-status", "--latest"])
+    assert latest["outcome"] == "unknown" and latest["receipt_scope"] == "reply"
+    _, recovered = harness.invoke(shlex.split(latest["recovery_command"])[1:])
+    assert recovered["outcome"] == "unknown" and recovered["operation_id"] == "shared"
+    assert len(harness.writes) == 2
+
+
+def test_generated_id_survives_receipt_storage_failure_after_remote_success(tmp_path):
+    from mb.state import StateStore
+
+    harness = Harness(tmp_path)
+    with patch.object(StateStore, "finish", side_effect=OSError("private storage detail")):
+        _, data = harness.invoke(["post", "new", "Hello"])
+    assert data["outcome"] == "unknown" and data["operation_id"].startswith("cli-")
+    assert "operation-status" in data["recovery_command"]
+    assert "private storage" not in json.dumps(data)
+    _, latest = harness.invoke(["operation-status", "--latest"])
+    assert latest["operation_id"] == data["operation_id"] and latest["outcome"] == "unknown"
+    _, retry = harness.invoke(["post", "new", "Hello", "--operation-id", data["operation_id"]])
+    assert retry["outcome"] == "unknown" and len(harness.writes) == 1
+
+
+def test_human_existing_draft_publish_keeps_reviewed_source_guard(tmp_path):
+    from mb.services import source_hash
+
+    harness = Harness(tmp_path)
+    harness.draft = True
+    reviewed = source_hash(
+        {"type": ["h-entry"], "properties": {"content": ["old"], "post-status": ["draft"]}}
+    )
+    _, refused = harness.invoke(["post", "publish", URL, "--source-hash", "0" * 64])
+    assert refused["outcome"] == "not_applied" and not harness.writes
+    args = ["post", "publish", URL, "--source-hash", reviewed]
+    _, data = harness.invoke(args)
+    assert data["operation_id"].startswith("cli-") and data["outcome"] == "applied"
+    harness.draft = False
+    _, receipt = harness.invoke([*args, "--operation-id", data["operation_id"]])
+    assert receipt["outcome"] == "applied" and len(harness.writes) == 1

@@ -1,6 +1,8 @@
 """Shared helpers for command modules."""
 
 import re
+import shlex
+from uuid import uuid4
 
 import typer
 
@@ -147,3 +149,42 @@ def get_service(ctx: typer.Context, client=None):
         else config.CONFIG_DIR / "mcp-state.sqlite3",
         media_root=Path(options["media_root"]) if options.get("media_root") else None,
     )
+
+
+def cli_write(
+    ctx: typer.Context, service, action: str, operation_id: str | None, arguments: dict
+) -> dict:
+    """Start one CLI operation; the shared service persists its claim before dispatch."""
+    chosen_id = operation_id if operation_id is not None else f"cli-{uuid4().hex}"
+    try:
+        result = service.write(action, chosen_id, arguments)
+    except Exception:
+        # Dispatch or receipt persistence may have succeeded; never expose exception
+        # details or resend. Retain the chosen ID even if storing the result failed.
+        result = {
+            "ok": False,
+            "error": "write_outcome_unknown",
+            "code": 409,
+            "outcome": "unknown",
+            "operation_id": chosen_id,
+        }
+    return with_cli_recovery(ctx, service, result, "reply" if action == "post_reply" else "blog")
+
+
+def with_cli_recovery(ctx: typer.Context, service, result: dict, scope: str | None = None) -> dict:
+    """Provide a copyable read-only command for an uncertain receipt."""
+    if result.get("outcome") != "unknown" or not result.get("operation_id"):
+        return result
+    command = ["mb", "--profile", service.profile, "--state-file", str(service.state.path)]
+    if service.client.default_destination:
+        command += ["--blog", service.client.default_destination]
+    command += ["operation-status", result["operation_id"]]
+    scope = scope or result.get("receipt_scope")
+    if scope:
+        command += ["--scope", scope]
+    return {
+        **result,
+        "recovery_command": shlex.join(command),
+        "recovery_hint": "The write may have succeeded. Inspect this receipt and the remote result before trying again. "
+        "Rerunning a command without --operation-id starts a new operation and may duplicate it.",
+    }
