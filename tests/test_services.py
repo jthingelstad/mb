@@ -100,7 +100,7 @@ def test_broken_upstream_paging_never_acknowledges(service, client):
 
 def test_inbox_recent_window_gap_is_reported(service, client):
     service.identity()
-    service.state.acknowledge(service._scope("inbox"), "10", 0)
+    service.state.acknowledge(service._scope("inbox"), "10", 0, native=True)
     client.get_mentions.return_value = {"ok": True, "data": {"items": [{"id": 30}, {"id": 29}]}}
     result = service.attention("inbox")["data"]
     assert result["coverage"] == "recent-mentions-window"

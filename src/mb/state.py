@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import re
 import sqlite3
 from contextlib import closing, contextmanager
 from pathlib import Path
@@ -10,6 +11,14 @@ from pathlib import Path
 
 class StateConflict(ValueError):
     pass
+
+
+class CheckpointReviewRequired(StateConflict):
+    pass
+
+
+NATIVE_CURSOR = "native-order-v1"
+LEGACY_CURSOR = "legacy-review-required"
 
 
 class StateStore:
@@ -29,6 +38,9 @@ class StateStore:
                 "CREATE TABLE IF NOT EXISTS cursors (scope TEXT PRIMARY KEY, value TEXT, revision INTEGER NOT NULL)"
             )
             db.execute(
+                "CREATE TABLE IF NOT EXISTS cursor_provenance (scope TEXT PRIMARY KEY, value TEXT NOT NULL, revision INTEGER NOT NULL, scheme TEXT NOT NULL)"
+            )
+            db.execute(
                 "CREATE TABLE IF NOT EXISTS operations (scope TEXT, id TEXT, fingerprint TEXT, status TEXT, result TEXT, PRIMARY KEY(scope,id))"
             )
             db.execute("BEGIN IMMEDIATE")
@@ -42,32 +54,89 @@ class StateStore:
             db.close()
 
     def cursor(self, scope: str) -> tuple[str | None, int]:
-        if not self.path.exists():
-            return None, 0
-        with closing(sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True)) as db:
-            tables = db.execute("SELECT name FROM sqlite_master WHERE name='cursors'").fetchone()
+        record = self.cursor_record(scope)
+        return record["value"], record["revision"]
+
+    @staticmethod
+    def _cursor_record(db, scope: str) -> dict:
+        tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "cursors" not in tables:
             row = (
-                db.execute("SELECT value,revision FROM cursors WHERE scope=?", (scope,)).fetchone()
-                if tables
+                db.execute(
+                    "SELECT NULL,NULL,value,revision,scheme,NULL,scope FROM cursor_provenance WHERE scope=?",
+                    (scope,),
+                ).fetchone()
+                if "cursor_provenance" in tables
                 else None
             )
-        return (row[0], row[1]) if row else (None, 0)
-
-    def acknowledge(self, scope: str, value: str, expected_revision: int) -> dict:
-        with self.connection() as db:
+        elif "cursor_provenance" in tables:
+            # One statement reads the anchor, revision and provenance together.
             row = db.execute(
-                "SELECT value,revision FROM cursors WHERE scope=?", (scope,)
+                "SELECT c.value,c.revision,p.value,p.revision,p.scheme,c.scope,p.scope FROM (SELECT ? AS scope) s "
+                "LEFT JOIN cursors c ON c.scope=s.scope LEFT JOIN cursor_provenance p ON p.scope=s.scope",
+                (scope,),
             ).fetchone()
-            current, revision = row if row else (None, 0)
+        else:
+            row = db.execute(
+                "SELECT value,revision,NULL,NULL,NULL,scope,NULL FROM cursors WHERE scope=?",
+                (scope,),
+            ).fetchone()
+        if row is None or (row[5] is None and row[6] is None):
+            return {"value": None, "revision": 0, "scheme": None}
+        native = (
+            isinstance(row[0], str)
+            and re.fullmatch(r"[0-9]{1,20}", row[0]) is not None
+            and int(row[0]) > 0
+            and row[0] == str(int(row[0]))
+            and isinstance(row[1], int)
+            and row[1] > 0
+            and row[0:2] == row[2:4]
+            and row[4] == NATIVE_CURSOR
+        )
+        return {
+            "value": row[0],
+            "revision": row[1] if row[1] is not None else 0,
+            "scheme": NATIVE_CURSOR if native else LEGACY_CURSOR,
+        }
+
+    def cursor_record(self, scope: str) -> dict:
+        if not self.path.exists():
+            return {"value": None, "revision": 0, "scheme": None}
+        with closing(sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True)) as db:
+            return self._cursor_record(db, scope)
+
+    def acknowledge(
+        self, scope: str, value: str, expected_revision: int, *, native: bool = False
+    ) -> dict:
+        if native and (
+            not re.fullmatch(r"[0-9]{1,20}", value) or int(value) <= 0 or value != str(int(value))
+        ):
+            raise StateConflict("Invalid native checkpoint")
+        with self.connection() as db:
+            record = self._cursor_record(db, scope)
+            current, revision = record["value"], record["revision"]
+            if native and record["scheme"] == LEGACY_CURSOR:
+                raise CheckpointReviewRequired(
+                    "Checkpoint requires operator review; no automatic migration"
+                )
             if revision != expected_revision:
                 if current == value and revision == expected_revision + 1:
+                    if not native:
+                        db.execute("DELETE FROM cursor_provenance WHERE scope=?", (scope,))
                     return {"checkpoint": value, "revision": revision, "already_applied": True}
                 raise StateConflict("Checkpoint changed; read a fresh window before acknowledging")
-            if current is not None and int(value) < int(current):
+            if not native and current is not None and int(value) < int(current):
                 raise StateConflict("Checkpoint cannot move backwards")
             db.execute(
                 "INSERT OR REPLACE INTO cursors VALUES (?,?,?)", (scope, value, revision + 1)
             )
+            if native:
+                db.execute(
+                    "INSERT OR REPLACE INTO cursor_provenance VALUES (?,?,?,?)",
+                    (scope, value, revision + 1, NATIVE_CURSOR),
+                )
+            else:
+                db.execute("DELETE FROM cursor_provenance WHERE scope=?", (scope,))
             return {"checkpoint": value, "revision": revision + 1, "already_applied": False}
 
     @staticmethod

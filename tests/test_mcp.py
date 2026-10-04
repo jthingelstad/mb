@@ -355,3 +355,70 @@ async def test_stdio_concurrent_retries_and_scoped_receipt_lookup(tmp_path):
                 "operation_status", {"operation_id": "shared-id", "scope": "account"}
             )
             assert bad.is_error and bad.structured_content["code"] == 400
+
+
+@pytest.mark.anyio
+async def test_stdio_opaque_attention_advance_retry_and_legacy_refusal(tmp_path):
+    import sqlite3
+    from contextlib import closing
+
+    import anyio
+
+    params = parameters(tmp_path)
+    params.env["MB_TEST_OPAQUE_FEED"] = "1"
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            async def call(name, args):
+                response = await session.call_tool(name, args)
+                assert response.structured_content == json.loads(response.content[0].text)
+                return response.structured_content
+
+            async def catchup():
+                values, cursor = [], None
+                for _ in range(8):
+                    page = (
+                        await call(
+                            "catchup", {"count": 2, **({"cursor": cursor} if cursor else {})}
+                        )
+                    )["data"]
+                    values.extend(i["id"] for i in page["items"])
+                    cursor = page["next_cursor"]
+                    if not cursor:
+                        return values, page
+                pytest.fail("Fixture did not exhaust")
+
+            values, page = await catchup()
+            assert values == ["9", "3", "7", "2", "8", "1"]
+            assert page["checkpoint_status"] == "empty" and page["coverage_complete"]
+            assert (await call("checkpoint_ack", {"receipt": page["ack_receipt"]}))["data"][
+                "checkpoint"
+            ] == "9"
+            # This write runs entirely inside the synthetic subprocess backend.
+            assert (
+                await call(
+                    "post_create", {"content": "Fixture only", "operation_id": "opaque-fixture"}
+                )
+            )["ok"]
+            values, page = await catchup()
+            assert values == ["4"] and page["checkpoint_status"] == "native-order-v1"
+            results = []
+
+            async def ack():
+                results.append(await call("checkpoint_ack", {"receipt": page["ack_receipt"]}))
+
+            async with anyio.create_task_group() as group:
+                group.start_soon(ack)
+                group.start_soon(ack)
+            assert all(
+                r["data"]["checkpoint"] == "4" and r["data"]["revision"] == 2 for r in results
+            )
+            assert sorted(r["data"]["already_applied"] for r in results) == [False, True]
+            with closing(sqlite3.connect(tmp_path / "state.sqlite")) as db, db:
+                db.execute("UPDATE cursors SET value='9',revision=3")  # RC2-style old writer.
+            values, legacy = await catchup()
+            assert values == ["4"] and legacy["checkpoint_review_required"]
+            assert not legacy["coverage_complete"] and legacy["ack_receipt"] is None
+            stale = await call("checkpoint_ack", {"receipt": page["ack_receipt"]})
+            assert stale["reason"] == "checkpoint_review_required"

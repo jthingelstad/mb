@@ -298,7 +298,7 @@ def test_inbox_cannot_acknowledge_a_numeric_guess_of_checkpoint(tmp_path, ids):
 def test_inbox_exact_checkpoint_proves_prefix_only(tmp_path):
     service, client = service_at(tmp_path)
     service.identity()
-    service.state.acknowledge(service._scope("inbox"), "100", 0)
+    service.state.acknowledge(service._scope("inbox"), "100", 0, native=True)
     client.get_mentions.return_value = {
         "ok": True,
         "data": {"items": [{"id": i} for i in [110, 100, 90]]},
@@ -309,11 +309,17 @@ def test_inbox_exact_checkpoint_proves_prefix_only(tmp_path):
     assert service.acknowledge(result["ack_receipt"])["data"]["checkpoint"] == "110"
 
 
-def test_catchup_cannot_discard_newer_low_numeric_id_and_ack(tmp_path):
+def test_legacy_checkpoint_does_not_gain_trust_from_native_exhaustion(tmp_path):
     service, client = service_at(tmp_path)
     service.identity()
     service.state.acknowledge(service._scope("catchup"), "100", 0)
-    client.get_timeline.return_value = {"ok": True, "data": {"items": [{"id": 90}]}}
-    assert service.attention("catchup")["code"] == 502
+    client.get_timeline.side_effect = [
+        {"ok": True, "data": {"items": [{"id": 90}]}},
+        {"ok": True, "data": {"items": []}},
+    ]
+    data = service.attention("catchup")["data"]
+    assert data["items"][0]["id"] == "90"
+    assert data["checkpoint_review_required"] and not data["coverage_complete"]
+    assert data["ack_receipt"] is None
     assert not service._receipts
     assert service.state.cursor(service._scope("catchup")) == ("100", 1)
