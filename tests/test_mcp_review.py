@@ -96,28 +96,16 @@ def test_bad_feed_page_never_yields_ack_receipt(tmp_path, payload):
         assert not service.state.path.exists()
 
 
-def test_unsorted_pages_use_lowest_id_and_exhaust_all_items(tmp_path):
+def test_unsorted_attention_page_refuses_unproven_checkpoint_coverage(tmp_path):
     service, client = make_service(tmp_path)
-    calls = []
-    pages = [[9, 10], [7, 8], [5, 6], []]
-
-    def page(**kwargs):
-        calls.append(kwargs.get("before_id"))
-        return {"ok": True, "data": {"items": [{"id": i} for i in pages.pop(0)]}}
-
-    client.get_timeline.side_effect = page
-    cursor = None
-    seen = []
-    for _ in range(4):
-        result = service.attention("catchup", count=2, cursor=cursor)["data"]
-        seen += [item["id"] for item in result["items"]]
-        cursor = result["next_cursor"]
-        if cursor is None:
-            break
-        assert result["ack_receipt"] is None
-    assert seen == ["10", "9", "8", "7", "6", "5"]
-    assert calls == [None, 9, 7, 5]
-    assert service.acknowledge(result["ack_receipt"])["data"]["checkpoint"] == "10"
+    client.get_timeline.return_value = {
+        "ok": True,
+        "data": {"items": [{"id": 9}, {"id": 10}]},
+    }
+    result = service.attention("catchup", count=2)
+    assert not result["ok"] and result["code"] == 502
+    assert "coverage cannot be proven" in result["error"]
+    assert not service._receipts and not service.state.path.exists()
 
 
 @pytest.mark.parametrize("items", [[{"id": "bad"}], [{"id": 1}, {"id": 1}], [None]])

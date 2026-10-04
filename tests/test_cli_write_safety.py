@@ -314,3 +314,18 @@ def test_uncertain_upload_receipt_survives_file_removal(tmp_path):
     image.unlink()
     _, second = harness.invoke(args)
     assert second["outcome"] == "unknown" and len(harness.writes) == 1
+
+
+def test_cli_scoped_status_refuses_receipt_collision(tmp_path):
+    harness = Harness(tmp_path)
+    assert harness.invoke(["post", "new", "Hello", "--operation-id", "shared"])[1]["ok"]
+    assert harness.invoke(["post", "reply", "12", "Hello", "--operation-id", "shared"])[1]["ok"]
+    result, ambiguous = harness.invoke(["operation-status", "shared"])
+    assert result.exit_code == 1 and ambiguous["reason"] == "ambiguous_operation"
+    assert (
+        harness.invoke(["operation-status", "shared", "--scope", "reply"])[1]["data"]["id"] == "13"
+    )
+    assert (
+        harness.invoke(["operation-status", "shared", "--scope", "blog"])[1]["data"]["url"]
+        == BLOG + "created.html"
+    )
