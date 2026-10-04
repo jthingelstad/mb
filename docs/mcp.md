@@ -90,7 +90,7 @@ mb post publish EXISTING_DRAFT_URL --source-hash REVIEWED_HASH --operation-id pu
 mb operation-status publish-draft-1
 ```
 
-CLI create/reply/edit/delete opt into shared CLI/MCP receipts with `--operation-id` and global `--state-file`. Receipt edit/delete inputs use exact URL or numeric ID; legacy slug resolution remains on the legacy path. Writes without an ID keep their compatibility path without deduplication guarantees. Receipt create refuses local `--photo`: upload separately and use its URL. Legacy `--photo` and `mb upload` still work and now decode supported images and resolve destination; their combined path has no atomic retry guarantee.
+CLI create/short/reply/edit/delete/publish and upload now require caller-stable `--operation-id` and always use the shared services. Missing IDs refuse before HTTP; none are silently generated. Edit/delete require exact owned URLs or numeric IDs, not legacy slug suffixes. Combined `--photo` refuses before upload; use reviewed media upload and a separate post ID. `mb upload` is a spelling alias for the same reviewed relative-file/hash/alt/ID workflow; implicit absolute paths and remote fetching are removed. See [concrete 1.x migration and adoption steps](migration-2.0.md).
 
 A coordinated real image-to-post test would be valuable before adoption: choose a specifically approved image, destination, caption/alt and draft/publish choice; check availability, source alt and rendered output. No actual image was uploaded or published during verification. See [content-index proposal](content-index-plan.md) and [Homebrew release plan](homebrew-release-plan.md) for proposed subsequent work.
 
@@ -101,10 +101,9 @@ The documented request is `GET /conversation.js?url=FULL_POST_URL&format=jsonfee
 | Surface | Current receipt policy | Remaining difference |
 | --- | --- | --- |
 | MCP consequential writes | Caller operation ID required | Shared state is required across processes; remote writes are not server-idempotent |
-| CLI `media upload`, `post publish` | Caller operation ID required | Same shared service and guards as MCP |
-| CLI `post new/short/reply/edit/delete` | `--operation-id` is optional | With ID: shared receipts/ownership. Without ID: legacy direct path, no durable retry protection; edit/delete bypass the service's selected-blog ownership guard |
-| Legacy CLI `upload` and `post ... --photo` | No durable operation ID | Separate upload and post side effects can repeat; use reviewed `media` plus receipt create for agents |
+| CLI post create/short/reply/edit/delete/publish and `media upload`/`upload` | Caller operation ID required | Same shared service, guards and receipts as MCP; dry-run remains pure |
+| Combined `post ... --photo` and implicit/remote upload | Refused before side effects | Use reviewed media upload and separate post ID; no automatic fetching |
 | CLI follows/moderation | Direct API compatibility path | No MCP tools or durable receipt contract in this bounded candidate |
 | CLI `post get/list` | Legacy read path | Less identity/coverage enforcement than shared MCP post source; `blog posts/search/categories` use selected-blog services |
 
-Recommendation before calling CLI/MCP consequential-write parity complete: make stable caller IDs and shared services the default requirement for agent-facing CLI writes in 2.0; retain any legacy path only through an explicit compatibility choice. Auto-generating a fresh ID on every invocation would record outcomes but would not make command retries safe. This is a product compatibility decision and has not been silently implemented in this follow-up. For the current candidate, agent guidance must use `--operation-id`, share `--state-file`, upload separately, preserve arguments/IDs and never blindly rerun an uncertain command.
+The 2.0 compatibility decision is implemented: no legacy direct post/upload escape path remains. Scripts must persist caller IDs/arguments and share their state file with MCP. Receipts do not make remote writes server-idempotent. Pending/unknown operations need read-back and operator reconciliation; there is no automatic reset. See [migration examples and exact adoption gates](migration-2.0.md). Installed 1.1, cron and credentials are unchanged.

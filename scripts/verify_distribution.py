@@ -21,6 +21,8 @@ with tarfile.open(source) as archive:
         "tests/conftest.py",
         "tests/mcp_fixture.py",
         "docs/mcp.md",
+        "docs/migration-2.0.md",
+        "tests/test_cli_write_safety.py",
         "docs/content-index-plan.md",
         "docs/homebrew-release-plan.md",
         "tests/test_bounded_capabilities.py",

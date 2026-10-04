@@ -4,7 +4,7 @@ A bridge to [micro.blog](https://micro.blog), designed for agents: an agent-firs
 
 `mb` prioritizes agent-friendly output, composable commands, and zero interactive prompts, making it a good fit for AI agents and scripts.
 
-The 2.0 release candidate adds 23 typed tools, explicit acknowledgement, shared write receipts, reviewed local images, guarded draft publishing and bounded discovery/search reads. See [MCP setup and contracts](docs/mcp.md).
+The 2.0 release candidate adds 23 typed tools, explicit acknowledgement, shared write receipts, reviewed local images, guarded draft publishing and bounded discovery/search reads. All post/upload writes require caller-stable operation IDs; combined photo posting and remote fetching are removed. See [MCP setup and contracts](docs/mcp.md) and [2.0 migration and adoption](docs/migration-2.0.md).
 
 ## Install
 
@@ -24,7 +24,7 @@ mb auth YOUR_TOKEN
 mb whoami
 
 # Post something
-mb post new "Hello from the command line"
+mb post new "Hello from the command line" --operation-id example-1
 
 # Read your timeline
 mb timeline
@@ -49,7 +49,7 @@ blog = "https://work.micro.blog/"
 Switch profiles with `--profile`:
 
 ```bash
-mb --profile work post new "Posted from work blog"
+mb --profile work post new "Posted from work blog" --operation-id example-2
 ```
 
 ### Environment Variables
@@ -163,7 +163,7 @@ mb heartbeat                 Compact agent session snapshot
 mb inbox                     Attention-oriented mention triage
 mb catchup                   New timeline posts since last catchup
 mb checkpoint list           List saved workflow checkpoints
-mb upload <path-or-url>      Upload an image and return its URL
+mb media preview FILE --alt TEXT   Review under explicit --media-root DIR
 mb following                 List who you follow
 mb follow <username|->       Follow one or more users
 mb unfollow <username|->     Unfollow one or more users
@@ -175,26 +175,28 @@ mb discover --collection books
 
 ### Posting
 
+Example IDs below illustrate caller-assigned task IDs. Persist each intended action's ID and exact arguments before invocation and reuse both on retries. Use one shared state file for CLI/MCP. See [migration guidance](docs/migration-2.0.md).
+
 ```
-mb post new "Hello world"
-mb post short "A small thought"
-mb post new --title "My Post" --content "Body text"
-mb post new --draft "Draft text"             Save as draft
-mb post short --strict-300 "A small thought"
-mb post new --file post.md                   Post from file (first # heading = title)
-mb post new --photo image.jpg --alt "desc"   Post with photo
-mb post new --photo-url https://...          Use a previously uploaded photo URL
-mb post new --category tag                   Add category (repeatable)
+mb post new "Hello world" --operation-id example-3
+mb post short "A small thought" --operation-id example-4
+mb post new --title "My Post" --content "Body text" --operation-id example-5
+mb post new --draft "Draft text" --operation-id example-6             Save as draft
+mb post short --strict-300 "A small thought" --operation-id example-7
+mb post new --file post.md --operation-id example-8                   Post from file (first # heading = title)
+mb --media-root ./reviewed media preview image.jpg --alt "desc"  # Upload separately after review
+mb post new "Caption" --photo-url https://... --operation-id example-9          Use a previously uploaded photo URL
+mb post new "Tagged text" --category tag --operation-id example-10                   Add category (repeatable)
 mb post new --dry-run "Hello world"          Validate without posting
 mb post get <id>                             Fetch a post by ID or URL
-mb post edit <id> --content "New text"       Edit post content
-mb post edit <id> --title "New Title"        Edit post title
-mb post edit <id> --category tag             Replace post categories
-mb post reply <id> "Reply text"
-mb post delete <id>
+mb post edit <id> --content "New text" --operation-id example-11       Edit post content
+mb post edit <id> --title "New Title" --operation-id example-12        Edit post title
+mb post edit <id> --category tag --operation-id example-13             Replace post categories
+mb post reply <id> "Reply text" --operation-id example-14
+mb post delete <id> --operation-id example-15
 mb post list
 mb post list --drafts
-echo "piped content" | mb post new -         Read from stdin
+echo "piped content" | mb post new - --operation-id example-16         Read from stdin
 ```
 
 ### Timeline
@@ -329,11 +331,14 @@ mb user discover --format agent
 mb discover --list
 
 # Upload an image first, then attach it to a post
-img=$(mb upload ./otter.jpg --format json | jq -r '.data.url')
-mb post new "An otter for today" --photo-url "$img" --alt "An otter beside the water"
+mb --media-root ./reviewed media preview otter.jpg --alt "An otter beside the water"
+# Save the reviewed hash; upload and save its returned URL before creating the post.
+mb --media-root ./reviewed media upload otter.jpg --alt "An otter beside the water" --sha256 REVIEWED_SHA --operation-id otter-upload-1
+img=RETURNED_UPLOAD_URL
+mb post new "An otter for today" --photo-url "$img" --alt "An otter beside the water" --operation-id example-17
 
 # Short-form publishing for conversational micro.blog posts
-mb post short "A small thought for today."
+mb post short "A small thought for today." --operation-id example-18
 ```
 
 ## License

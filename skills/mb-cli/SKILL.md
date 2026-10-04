@@ -114,16 +114,16 @@ mb blogs
 Posting:
 
 ```bash
-mb post new "Text"
-mb post short "Short text"
-mb post new --content "Text"
-mb post new --file post.md
-mb post short --strict-300 "Short text"
+mb post new "Text" --operation-id example-1
+mb post short "Short text" --operation-id example-2
+mb post new --content "Text" --operation-id example-3
+mb post new --file post.md --operation-id example-4
+mb post short --strict-300 "Short text" --operation-id example-5
 mb post new --dry-run "Text"
-mb upload ./image.jpg
-mb post new "Text" --photo-url https://cdn.micro.blog/...
-mb post edit <id> --content "Updated"
-mb post reply <id> "Reply text"
+mb --media-root ./reviewed media preview image.jpg --alt "Description"
+mb post new "Text" --photo-url https://cdn.micro.blog/... --operation-id example-6
+mb post edit <id> --content "Updated" --operation-id example-7
+mb post reply <id> "Reply text" --operation-id example-8
 ```
 
 Reading:
@@ -151,8 +151,10 @@ mb follow <username|->
 mb unfollow <username|->
 ```
 
-## Candidate 2.0 additions
+## Candidate 2.0 write requirements
+
+Persist the intended action's operation ID and exact arguments before invoking a write. Reuse both on retries; never generate a fresh ID after an uncertain outcome. All post writes require `--operation-id` except pure dry-run. Use one persistent shared state file. Combined `--photo`, implicit absolute-path upload and remote URL fetch are removed; follow the explicit media workflow. Edit/delete require an exact owned URL or numeric ID. See [migration guide](../../docs/migration-2.0.md).
 
 Use `mb media preview FILE --alt TEXT` under an explicitly selected `--media-root DIR` to review a supported static local image, its normalized payload/hash and verified destination. After authorization, `mb media upload FILE --alt TEXT --sha256 HASH --operation-id ID` returns the image reference; HTTP 202 means accepted but possibly still processing. Attach that URL with `mb post new ... --photo-url URL --alt TEXT --operation-id DIFFERENT_ID`. Preserve IDs/arguments across retries and inspect `mb operation-status ID` after uncertainty. Never repeat an upload merely because creating a post failed.
 
-Post create/reply/edit/delete can opt into shared CLI/MCP receipts with `--operation-id` and `--state-file`. Existing-draft publish requires `mb post get URL --format json`, review of its source, then `mb post publish URL --source-hash HASH --operation-id ID`; no automatic live verification writes. `mb post replies`, `mb user show --count N`, `mb discover --count N` and `mb conversation URL` are account reads. `mb blog posts/search/categories` are selected-blog source reads with bounded coverage, not a complete category audit. `mb user mute WORD --keyword` explicitly mutes a keyword.
+Post create/reply/edit/delete require caller-stable IDs and shared CLI/MCP receipts with `--operation-id` and `--state-file`. Existing-draft publish requires `mb post get URL --format json`, review of its source, then `mb post publish URL --source-hash HASH --operation-id ID`; no automatic live verification writes. `mb post replies`, `mb user show --count N`, `mb discover --count N` and `mb conversation URL` are account reads. `mb blog posts/search/categories` are selected-blog source reads with bounded coverage, not a complete category audit. `mb user mute WORD --keyword` explicitly mutes a keyword.

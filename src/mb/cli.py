@@ -329,11 +329,13 @@ def catchup(
 @app.command()
 def upload(
     ctx: typer.Context,
-    source: str = typer.Argument(..., help="Local image path or remote image URL"),
+    source: str = typer.Argument(..., help="Reviewed relative image under --media-root"),
     alt: str = typer.Option(None, "--alt", help="Alt text for the uploaded image"),
+    sha256: str | None = typer.Option(None, "--sha256", help="Input hash from media preview"),
+    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable caller upload ID"),
 ):
-    """Upload an image and return its hosted URL."""
-    upload_cmd.run(ctx, source=source, alt=alt)
+    """Alias for media upload; requires the reviewed hash, alt text and stable ID."""
+    upload_cmd.run(ctx, source=source, alt=alt, sha256=sha256, operation_id=operation_id)
 
 
 # ── Conversation (top-level) ───────────────────────────────

@@ -618,7 +618,12 @@ class MicroblogService:
         if self.read_only:
             return failure("Server is read-only", 403, outcome="not_applied")
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", operation_id):
-            return failure("Use a stable operation ID of 1-128 letters, digits or _.:-")
+            return failure(
+                "Writes require a caller-stable --operation-id (operation_id in MCP): "
+                "1-128 letters, digits or _.:-. Save the ID and exact arguments before calling; "
+                "reuse both on retries. Never generate a fresh ID to retry an uncertain write.",
+                outcome="not_applied",
+            )
         if action == "media_upload" and not re.fullmatch(
             r"[a-f0-9]{64}", arguments.get("sha256", "")
         ):

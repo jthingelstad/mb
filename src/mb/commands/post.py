@@ -89,7 +89,9 @@ def new(
     title: str | None = typer.Option(None, "--title", "-t", help="Post title"),
     draft: bool = typer.Option(False, "--draft", help="Create as draft"),
     file: str | None = typer.Option(None, "--file", help="Read content from markdown file"),
-    photo: str | None = typer.Option(None, "--photo", help="Path to photo to upload"),
+    photo: str | None = typer.Option(
+        None, "--photo", help="Removed in 2.0; use media preview/upload then --photo-url"
+    ),
     photo_url: str | None = typer.Option(
         None, "--photo-url", help="Existing uploaded photo URL to attach"
     ),
@@ -98,7 +100,11 @@ def new(
         None, "--category", "-c", help="Categories/tags for the post"
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without posting"),
-    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable write receipt ID"),
+    operation_id: str | None = typer.Option(
+        None,
+        "--operation-id",
+        help="Required stable caller ID; preserve it and arguments across retries",
+    ),
 ):
     """Create a new post."""
     from mb.formatters import output
@@ -127,12 +133,13 @@ def new(
         output({"ok": False, "error": str(e), "code": 400}, fmt)
         raise SystemExit(1)
 
-    if operation_id and photo:
+    if photo:
         output(
             {
                 "ok": False,
-                "error": "Receipt writes require an existing --photo-url; use media preview/upload first",
+                "error": "Combined --photo upload/post was removed in 2.0. Use media preview/upload with a separate stable ID, then --photo-url and a post operation ID",
                 "code": 400,
+                "outcome": "not_applied",
             },
             fmt,
         )
@@ -159,21 +166,6 @@ def new(
         )
         return
 
-    # Upload photo if provided
-    if photo:
-        identity = get_service(ctx, client).identity()
-        if not identity["ok"]:
-            output_or_exit(identity, fmt)
-            return
-        client.default_destination = identity["data"]["blog"]
-        upload = client.micropub_upload_photo(photo, alt=alt)
-        if not upload["ok"]:
-            output(upload, fmt)
-            raise SystemExit(1)
-        photo_url = upload["data"]["url"]
-
-    from mb.services import create_post
-
     arguments = dict(
         content=content,
         title=title,
@@ -182,11 +174,7 @@ def new(
         photo_alt=alt,
         categories=category or None,
     )
-    result = (
-        get_service(ctx).write("post_create", operation_id, arguments)
-        if operation_id
-        else create_post(client, **arguments)
-    )
+    result = get_service(ctx, client).write("post_create", operation_id or "", arguments)
     output_or_exit(result, fmt)
 
 
@@ -199,7 +187,9 @@ def short(
     ),
     draft: bool = typer.Option(False, "--draft", help="Create as draft"),
     file: str = typer.Option(None, "--file", help="Read short post content from markdown file"),
-    photo: str = typer.Option(None, "--photo", help="Path to photo to upload"),
+    photo: str = typer.Option(
+        None, "--photo", help="Removed in 2.0; use media preview/upload then --photo-url"
+    ),
     photo_url: str = typer.Option(
         None, "--photo-url", help="Existing uploaded photo URL to attach"
     ),
@@ -211,7 +201,11 @@ def short(
         False, "--strict-300", help=f"Fail if content exceeds {SHORT_POST_LIMIT} characters"
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without posting"),
-    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable write receipt ID"),
+    operation_id: str | None = typer.Option(
+        None,
+        "--operation-id",
+        help="Required stable caller ID; preserve it and arguments across retries",
+    ),
 ):
     """Create a short-form post without a title."""
     from mb.formatters import output
@@ -256,12 +250,13 @@ def short(
             raise SystemExit(1)
         warnings.append(f"content exceeds {SHORT_POST_LIMIT} characters")
 
-    if operation_id and photo:
+    if photo:
         output(
             {
                 "ok": False,
-                "error": "Receipt writes require an existing --photo-url; use media preview/upload first",
+                "error": "Combined --photo upload/post was removed in 2.0. Use media preview/upload with a separate stable ID, then --photo-url and a post operation ID",
                 "code": 400,
+                "outcome": "not_applied",
             },
             fmt,
         )
@@ -290,20 +285,6 @@ def short(
         )
         return
 
-    if photo:
-        identity = get_service(ctx, client).identity()
-        if not identity["ok"]:
-            output_or_exit(identity, fmt)
-            return
-        client.default_destination = identity["data"]["blog"]
-        upload = client.micropub_upload_photo(photo, alt=alt)
-        if not upload["ok"]:
-            output(upload, fmt)
-            raise SystemExit(1)
-        photo_url = upload["data"]["url"]
-
-    from mb.services import create_post
-
     arguments = dict(
         content=content,
         draft=draft,
@@ -311,11 +292,7 @@ def short(
         photo_alt=alt,
         categories=category or None,
     )
-    result = (
-        get_service(ctx).write("post_create", operation_id, arguments)
-        if operation_id
-        else create_post(client, **arguments)
-    )
+    result = get_service(ctx, client).write("post_create", operation_id or "", arguments)
     if result.get("ok"):
         result["data"]["short"] = True
         result["data"]["char_count"] = char_count
@@ -348,7 +325,11 @@ def edit(
     content: str = typer.Option(None, "--content", help="New content (use '-' for stdin)"),
     title: str = typer.Option(None, "--title", "-t", help="New title"),
     category: list[str] = typer.Option(None, "--category", "-c", help="Replace categories"),
-    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable write receipt ID"),
+    operation_id: str | None = typer.Option(
+        None,
+        "--operation-id",
+        help="Required stable caller ID; preserve it and arguments across retries",
+    ),
 ):
     """Edit an existing post."""
     from mb.formatters import output
@@ -370,24 +351,14 @@ def edit(
         )
         raise SystemExit(1)
 
-    if operation_id:
-        output_or_exit(
-            get_service(ctx).write(
-                "post_edit",
-                operation_id,
-                dict(identifier=post_id, content=content, title=title, categories=category),
-            ),
-            fmt,
-        )
-        return
-    url = resolve_post_url(client, post_id, fmt)
-    result = client.micropub_update(
-        url,
-        content=content,
-        title=title,
-        categories=category or None,
+    output_or_exit(
+        get_service(ctx, client).write(
+            "post_edit",
+            operation_id or "",
+            dict(identifier=post_id, content=content, title=title, categories=category),
+        ),
+        fmt,
     )
-    output_or_exit(result, fmt)
 
 
 def _extract_post_id(post_id: str) -> int | None:
@@ -407,7 +378,11 @@ def reply(
     ctx: typer.Context,
     post_id: str = typer.Argument(..., help="Post ID or URL to reply to"),
     content: str = typer.Argument(..., help="Reply content (use '-' for stdin)"),
-    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable write receipt ID"),
+    operation_id: str | None = typer.Option(
+        None,
+        "--operation-id",
+        help="Required stable caller ID; preserve it and arguments across retries",
+    ),
 ):
     """Reply to a post via the native micro.blog API."""
     from mb.formatters import output
@@ -428,37 +403,33 @@ def reply(
         )
         raise SystemExit(1)
 
-    from mb.services import reply_post
-
-    result = (
-        get_service(ctx).write(
-            "post_reply", operation_id, dict(post_id=str(numeric_id), content=content)
-        )
-        if operation_id
-        else reply_post(client, numeric_id, content)
+    output_or_exit(
+        get_service(ctx, client).write(
+            "post_reply", operation_id or "", dict(post_id=str(numeric_id), content=content)
+        ),
+        fmt,
     )
-    output_or_exit(result, fmt)
 
 
 @app.command()
 def delete(
     ctx: typer.Context,
     post_id: str = typer.Argument(..., help="Post ID or URL to delete"),
-    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable write receipt ID"),
+    operation_id: str | None = typer.Option(
+        None,
+        "--operation-id",
+        help="Required stable caller ID; preserve it and arguments across retries",
+    ),
 ):
     """Delete a post."""
 
     fmt = get_format(ctx)
     client = get_client(ctx)
 
-    if operation_id:
-        output_or_exit(
-            get_service(ctx).write("post_delete", operation_id, dict(identifier=post_id)), fmt
-        )
-        return
-    url = resolve_post_url(client, post_id, fmt)
-    result = client.micropub_delete(url)
-    output_or_exit(result, fmt)
+    output_or_exit(
+        get_service(ctx, client).write("post_delete", operation_id or "", dict(identifier=post_id)),
+        fmt,
+    )
 
 
 @app.command("list")

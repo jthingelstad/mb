@@ -1,11 +1,15 @@
 """Run with an isolated base wheel installation, without development/MCP dependencies."""
 
 import importlib.util
+import json
 import sys
 from importlib.resources import files
+from unittest.mock import patch
 
+import httpx
 from typer.testing import CliRunner
 
+from mb.api import MicroblogClient
 from mb.cli import app
 
 assert importlib.util.find_spec("mcp") is None
@@ -22,3 +26,41 @@ assert "mcp.server" not in sys.modules
 print(
     "Installed base wheel: CLI callback/help, optional-extra error and packaged guidance verified."
 )
+
+# The installed CLI must enforce 2.0 write requirements without MCP or HTTP.
+requests = []
+
+
+def forbid_http(request):
+    requests.append(request)
+    raise AssertionError("Missing-ID or migration refusal must precede HTTP")
+
+
+def synthetic_client(token):
+    client = MicroblogClient(token)
+    client._client.close()
+    client._client = httpx.Client(
+        base_url="https://micro.blog", transport=httpx.MockTransport(forbid_http)
+    )
+    return client
+
+
+with (
+    patch("mb.config.get_token", return_value="synthetic"),
+    patch("mb.config.get_blog", return_value=None),
+    patch("mb.cli.MicroblogClient", side_effect=synthetic_client),
+):
+    missing_id = runner.invoke(app, ["--format", "json", "post", "new", "Synthetic"])
+    assert missing_id.exit_code == 1, missing_id.exception
+    envelope = json.loads(missing_id.output)
+    assert envelope["outcome"] == "not_applied" and "--operation-id" in envelope["error"]
+    combined = runner.invoke(
+        app, ["--format", "json", "post", "new", "Caption", "--photo", "x.png"]
+    )
+    assert (
+        combined.exit_code == 1 and "media preview/upload" in json.loads(combined.output)["error"]
+    )
+    remote = runner.invoke(app, ["--format", "json", "upload", "https://example.test/image.png"])
+    assert remote.exit_code == 1 and json.loads(remote.output)["outcome"] == "not_applied"
+assert requests == []
+print("Installed base wheel: mandatory caller IDs and removed implicit photo/URL paths verified.")

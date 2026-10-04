@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 import httpx
+import pytest
 from typer.testing import CliRunner
 
 from mb.cli import app
@@ -289,13 +290,16 @@ def _invoke(args, token="test-token", username="testuser", blog=None):
     args = list(args)
     if "--format" not in args and "--human" not in args:
         args = ["--format", "json", *args]
+    from tempfile import TemporaryDirectory
+
     with (
+        TemporaryDirectory() as state_dir,
         patches[0],
         patches[1],
         patches[2],
         patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
     ):
-        return runner.invoke(app, args)
+        return runner.invoke(app, ["--state-file", f"{state_dir}/receipts.sqlite", *args])
 
 
 def _make_mock_init(transport):
@@ -508,14 +512,23 @@ class TestGlobalFlagOrdering:
 class TestPostReply:
     def test_reply_bare_id_uses_native_api(self):
         """Bare ID should reply via POST /posts/reply (native API)."""
-        result = _invoke(["post", "reply", "100", "Nice post!"])
+        result = _invoke(["post", "reply", "100", "Nice post!", "--operation-id", "reply-100"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["ok"] is True
 
     def test_reply_url_extracts_id(self):
         """micro.blog URL should extract numeric ID and use native API."""
-        result = _invoke(["post", "reply", "https://micro.blog/alice/100", "Great!"])
+        result = _invoke(
+            [
+                "post",
+                "reply",
+                "https://micro.blog/alice/100",
+                "Great!",
+                "--operation-id",
+                "reply-url",
+            ]
+        )
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["ok"] is True
@@ -529,7 +542,7 @@ class TestPostReply:
 
     def test_reply_not_found_error(self):
         """Reply to a post ID not in the conversation should fail."""
-        result = _invoke(["post", "reply", "99999", "Hello"])
+        result = _invoke(["post", "reply", "99999", "Hello", "--operation-id", "reply-missing"])
         assert result.exit_code == 1
         data = json.loads(result.output)
         assert data["ok"] is False
@@ -1362,53 +1375,11 @@ class TestTopLevelPipelineAliases:
 
 
 class TestUpload:
-    def test_upload_local_file(self, tmp_path):
-        photo = tmp_path / "otter.jpg"
-        from PIL import Image
-
-        Image.new("RGB", (2, 2), "blue").save(photo)
-
-        transport = _mock_transport()
-        patches = _patch_config()
-        with (
-            patches[0],
-            patches[1],
-            patches[2],
-            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
-        ):
-            result = runner.invoke(app, ["--format", "json", "upload", str(photo)])
-
-        assert result.exit_code == 0
+    @pytest.mark.parametrize("source", ["/tmp/otter.jpg", "https://example.com/otter.jpg"])
+    def test_legacy_upload_refused_without_auth_or_network(self, source):
+        with patch("mb.config.get_token", side_effect=AssertionError("No credential lookup")):
+            result = runner.invoke(app, ["--format", "json", "upload", source])
+        assert result.exit_code == 1
         data = json.loads(result.output)
-        assert data["data"]["url"] == "https://cdn.micro.blog/photos/test-upload.jpg"
-
-    def test_upload_remote_url(self):
-        transport = _mock_transport()
-        patches = _patch_config()
-        with (
-            patches[0],
-            patches[1],
-            patches[2],
-            patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
-            patch(
-                "mb.commands.upload._download_image",
-                return_value=("otter.jpg", tiny_jpeg(), "image/jpeg"),
-            ),
-        ):
-            result = runner.invoke(
-                app, ["--format", "json", "upload", "https://example.com/otter.jpg"]
-            )
-
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert data["data"]["source"] == "https://example.com/otter.jpg"
-
-
-def tiny_jpeg():
-    import io
-
-    from PIL import Image
-
-    stream = io.BytesIO()
-    Image.new("RGB", (2, 2), "blue").save(stream, format="JPEG")
-    return stream.getvalue()
+        assert data["outcome"] == "not_applied"
+        assert "media preview" in data["error"]
