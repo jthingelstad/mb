@@ -43,7 +43,9 @@ def transport_service(tmp_path, handler, **options):
     client = MicroblogClient("synthetic")
     client._client.close()
     client._client = httpx.Client(
-        base_url="https://micro.blog", transport=httpx.MockTransport(response)
+        base_url="https://micro.blog",
+        transport=httpx.MockTransport(response),
+        headers={"Authorization": "Bearer synthetic"},
     )
     return MicroblogService(client, "default", BLOG, "test", tmp_path / "state.sqlite", **options)
 
@@ -399,3 +401,54 @@ def test_cli_image_preview_upload_post_publish_and_read_scope(tmp_path):
         categories = runner.invoke(app, ["blog", "categories", "--format", "json"])
         assert json.loads(categories.output)["data"]["identity"]["blog"] == BLOG
     assert len([r for r in requests if r.method == "POST"]) == 2
+
+
+@pytest.mark.parametrize(
+    "status,body,scope_error",
+    [
+        (403, "Token missing required scope", True),
+        (403, "Access denied", False),
+        (401, "Unauthorized", False),
+    ],
+)
+def test_url_conversation_denial_is_actionable_and_never_changes_access_mode(
+    tmp_path, status, body, scope_error
+):
+    requests = []
+
+    def response(request):
+        requests.append(request)
+        return httpx.Response(status, text=body)
+
+    service = transport_service(tmp_path, response)
+    result = service.conversation("https://public.example/post")
+    assert not result["ok"] and result["code"] == status
+    assert "data" not in result
+    assert len(requests) == 1
+    assert requests[0].headers["Authorization"] == "Bearer synthetic"
+    assert requests[0].headers["Accept"] == "application/json"
+    assert requests[0].url.path == "/conversation.js"
+    if scope_error:
+        assert result["reason"] == "insufficient_scope"
+        assert "review Micro.blog read permissions" in result["error"]
+        assert "native conversation ID" in result["error"]
+    else:
+        assert "reason" not in result
+    assert not service.state.path.exists()
+
+
+@pytest.mark.parametrize("fmt", ["agent", "json"])
+def test_cli_url_scope_error_preserves_refusal_and_guidance(tmp_path, fmt):
+    service = transport_service(
+        tmp_path, lambda r: httpx.Response(403, text="Token missing required scope")
+    )
+    with patch("mb.commands.conversation.get_client", return_value=service.client):
+        result = CliRunner().invoke(
+            app, ["conversation", "https://public.example/post", "--format", fmt]
+        )
+    assert result.exit_code == 1
+    if fmt == "json":
+        envelope = json.loads(result.output)
+        assert envelope["code"] == 403 and envelope["reason"] == "insufficient_scope"
+        assert "data" not in envelope
+    assert "review Micro.blog read permissions" in result.output

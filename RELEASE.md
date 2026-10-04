@@ -5,7 +5,7 @@
 - Verified canonical blog identity, consumer-scoped attention state, lossless timeline paging and explicit revision-checked acknowledgement. Recent mentions/source windows report limited coverage. CLI cursor behavior remains independent.
 - Durable account/blog post receipts and account-scoped native reply receipts with caller operation IDs, argument fingerprints and explicit unknown outcomes. No automatic resend; interrupted pending operations require human reconciliation.
 - Review fixes: resolve canonical/custom destination URLs safely; reject malformed feed/source and write confirmations; order pagination by ID and refuse invalid pages; exclude echoed credential values from stored recovery metadata.
-- Selected-blog server-side search/categories; bounded Discover/profile/own-reply reads and public URL conversations. Live URL conversations currently return HTTP 403, preserved as an error.
+- Selected-blog server-side search/categories; bounded Discover/profile/own-reply reads and public URL conversations. The existing credential lacks a required scope for URL conversations; HTTP 403 is preserved with actionable guidance and no access-mode fallback.
 - Guarded existing-draft publish using reviewed source hash; CLI writes opt into shared receipts with `--operation-id`.
 - Reviewed local image preview/upload for CLI and MCP, explicit allowed directory, Pillow decoding/normalization, metadata removal, selected destination, file hash guard and separate upload/post receipts. Alt text accompanies the post; HTTP 202 is labelled accepted/processing.
 - Keyword mute and DELETE unmute/unblock contract fixes. Content-index and Homebrew release plans documented; neither cache nor tap is implemented.

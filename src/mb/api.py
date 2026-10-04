@@ -156,6 +156,17 @@ class MicroblogClient:
             params={"url": url, "format": "jsonfeed"},
             headers={"Accept": "application/json"},
         )
+        if resp.status_code == 403 and resp.text.strip() == "Token missing required scope":
+            return {
+                "ok": False,
+                "error": (
+                    "URL conversation denied: token missing required scope. Ask the operator "
+                    "to review Micro.blog read permissions; use a native conversation ID if known. "
+                    "MB will not change credentials or retry anonymously."
+                ),
+                "code": 403,
+                "reason": "insufficient_scope",
+            }
         # Official Inkwell treats 404 as an unresolved URL, not proof of no replies.
         if resp.status_code == 404:
             return {"ok": True, "data": {"items": [], "not_found": True}}
