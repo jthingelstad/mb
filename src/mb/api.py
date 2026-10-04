@@ -1,6 +1,7 @@
 """HTTP client for micro.blog. Accepts base_url override for testing."""
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -58,7 +59,7 @@ class MicroblogClient:
         except ValueError:
             return 60
 
-    def _handle_response(self, resp: httpx.Response) -> dict:
+    def _handle_response(self, resp: httpx.Response, *, error_code: int = 502) -> dict:
         """Check for errors and return parsed JSON or error dict."""
         if "mb_error" in resp.extensions:
             return resp.extensions["mb_error"]
@@ -78,11 +79,20 @@ class MicroblogClient:
                 or f"HTTP {resp.status_code} error"
             )
             return {"ok": False, "error": text, "code": resp.status_code}
+        if resp.status_code >= 300:
+            return {"ok": False, "error": "unexpected_redirect", "code": 502}
         # Some endpoints return empty body on success (e.g. delete)
         if not resp.text.strip():
             return {"ok": True, "data": {}}
         try:
-            return {"ok": True, "data": resp.json()}
+            value = resp.json()
+            if isinstance(value, dict) and "error" in value:
+                return {
+                    "ok": False,
+                    "error": str(value["error"]).replace(self.token, "[redacted]")[:200],
+                    "code": error_code,
+                }
+            return {"ok": True, "data": value}
         except (ValueError, KeyError):
             return {"ok": False, "error": "invalid_response", "code": 502}
 
@@ -91,14 +101,16 @@ class MicroblogClient:
     def verify_token(self) -> dict:
         """POST /account/verify — returns user info if token is valid."""
         resp = self._request("POST", "/account/verify", data={"token": self.token})
+        # This endpoint reports invalid credentials in a JSON error with HTTP 200.
+        return self._handle_response(resp, error_code=401)
+
+    def _handle_feed_response(self, resp: httpx.Response) -> dict:
         result = self._handle_response(resp)
-        # API returns 200 with {"error": "..."} for invalid tokens
-        if result["ok"] and isinstance(result.get("data"), dict) and "error" in result["data"]:
-            return {
-                "ok": False,
-                "error": str(result["data"]["error"]).replace(self.token, "[redacted]"),
-                "code": 401,
-            }
+        if result["ok"]:
+            data = result.get("data")
+            items = data.get("items") if isinstance(data, dict) else None
+            if not isinstance(items, list) or not all(isinstance(i, dict) for i in items):
+                return {"ok": False, "error": "invalid_feed_response", "code": 502}
         return result
 
     # ── JSON API (reads) ────────────────────────────────────
@@ -112,30 +124,30 @@ class MicroblogClient:
         if before_id is not None:
             params["before_id"] = before_id
         resp = self._request("GET", "/posts/all", params=params)
-        return self._handle_response(resp)
+        return self._handle_feed_response(resp)
 
     def get_mentions(self) -> dict:
         resp = self._request("GET", "/posts/mentions")
-        return self._handle_response(resp)
+        return self._handle_feed_response(resp)
 
     def get_photos(self) -> dict:
         resp = self._request("GET", "/posts/photos")
-        return self._handle_response(resp)
+        return self._handle_feed_response(resp)
 
     def get_discover(self, collection: str | None = None) -> dict:
         if collection:
             resp = self._request("GET", f"/posts/discover/{collection}")
         else:
             resp = self._request("GET", "/posts/discover")
-        return self._handle_response(resp)
+        return self._handle_feed_response(resp)
 
     def get_conversation(self, post_id: int) -> dict:
         resp = self._request("GET", "/posts/conversation", params={"id": post_id})
-        return self._handle_response(resp)
+        return self._handle_feed_response(resp)
 
     def get_user(self, username: str) -> dict:
         resp = self._request("GET", f"/posts/{username}")
-        return self._handle_response(resp)
+        return self._handle_feed_response(resp)
 
     def get_following(self, username: str) -> dict:
         resp = self._request("GET", f"/users/following/{username}")
@@ -296,7 +308,7 @@ class MicroblogClient:
         if destination:
             data["mp-destination"] = destination
         resp = self._request("POST", "/micropub", data=data)
-        return self._handle_micropub_response(resp)
+        return self._handle_micropub_response(resp, require_location=True)
 
     def micropub_update(
         self,
@@ -346,7 +358,13 @@ class MicroblogClient:
         if self.default_destination:
             params["mp-destination"] = self.default_destination
         resp = self._request("GET", "/micropub", params=params)
-        return self._handle_response(resp)
+        result = self._handle_response(resp)
+        if result["ok"] and (
+            not isinstance(result.get("data"), dict)
+            or not isinstance(result["data"].get("properties"), dict)
+        ):
+            return {"ok": False, "error": "invalid_source_response", "code": 502}
+        return result
 
     def micropub_list(self, drafts: bool = False) -> dict:
         params: dict = {"q": "source"}
@@ -355,7 +373,7 @@ class MicroblogClient:
         if self.default_destination:
             params["mp-destination"] = self.default_destination
         resp = self._request("GET", "/micropub", params=params)
-        return self._handle_response(resp)
+        return self._handle_feed_response(resp)
 
     def micropub_get_categories(self) -> dict:
         """GET /micropub?q=category — list all categories."""
@@ -395,7 +413,9 @@ class MicroblogClient:
             return {"ok": False, "error": f"Cannot read file: {filepath} ({e})", "code": 400}
         return self.micropub_upload_bytes(filepath.split("/")[-1], content, alt=alt)
 
-    def _handle_micropub_response(self, resp: httpx.Response) -> dict:
+    def _handle_micropub_response(
+        self, resp: httpx.Response, *, require_location: bool = False
+    ) -> dict:
         """Handle Micropub responses (201 with Location header on success)."""
         if "mb_error" in resp.extensions:
             return resp.extensions["mb_error"]
@@ -415,14 +435,42 @@ class MicroblogClient:
                 or f"HTTP {resp.status_code} error"
             )
             return {"ok": False, "error": text, "code": resp.status_code}
+        if resp.status_code >= 300:
+            return {"ok": False, "error": "unexpected_redirect", "code": 502, "outcome": "unknown"}
         payload = {}
         if resp.text.strip():
             try:
                 value = resp.json()
-                payload = value if isinstance(value, dict) else {}
+                if not isinstance(value, dict) or "error" in value:
+                    return {
+                        "ok": False,
+                        "error": "invalid_write_response",
+                        "code": 502,
+                        "outcome": "unknown",
+                    }
+                payload = value
             except ValueError:
-                pass
+                return {
+                    "ok": False,
+                    "error": "invalid_write_response",
+                    "code": 502,
+                    "outcome": "unknown",
+                }
         location = resp.headers.get("Location") or payload.get("url", "")
+        if not isinstance(location, str) or (
+            require_location
+            and (
+                not location
+                or urlparse(location).scheme not in {"http", "https"}
+                or not urlparse(location).netloc
+            )
+        ):
+            return {
+                "ok": False,
+                "error": "missing_write_location",
+                "code": 502,
+                "outcome": "unknown",
+            }
         post_id = location.rstrip("/").split("/")[-1] if location else ""
         data = {"url": location, "id": post_id}
         # Draft preview links are returned to the caller, never copied into durable receipts.

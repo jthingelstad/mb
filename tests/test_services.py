@@ -68,7 +68,8 @@ def test_attention_paginates_then_acknowledges_and_isolates_consumers(service, c
             break
         assert page["ack_receipt"] is None
         # Incoming activity must be excluded from this frozen window.
-        items.insert(0, 111)
+        if 111 not in items:
+            items.insert(0, 111)
     assert seen == list(range(110, 100, -1))
     assert page["coverage_complete"]
     receipt = page["ack_receipt"]

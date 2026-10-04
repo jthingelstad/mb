@@ -1,11 +1,12 @@
 """Shared domain operations for CLI and MCP, independent of presentation and transport."""
 
 import json
+import re
 import secrets
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from mb.api import MicroblogClient
 from mb.domain import _build_thread, _classify_item, _extract_author_username
@@ -115,6 +116,7 @@ class MicroblogService:
         self.state = StateStore(state_path)
         self.read_only = read_only
         self._identity: Identity | None = None
+        self._blog_urls: tuple[str, ...] = ()
         self._receipts: dict[str, dict] = {}
         self._windows: dict[str, dict] = {}
 
@@ -132,7 +134,13 @@ class MicroblogService:
             destinations = configuration["data"].get("destination", [])
             requested = self.requested_blog
             if requested:
-                matches = [d for d in destinations if requested in {d.get("uid"), d.get("name")}]
+                matches = [
+                    d
+                    for d in destinations
+                    if requested == d.get("name")
+                    or requested.rstrip("/")
+                    in {u.rstrip("/") for u in self._destination_urls(d, destinations)}
+                ]
                 if len(matches) != 1:
                     return failure("Blog must resolve to exactly one available destination", 400)
                 blog = matches[0]["uid"]
@@ -147,6 +155,7 @@ class MicroblogService:
                         return failure("Choose an explicit --blog destination", 400)
                     matches = destinations
                 blog = matches[0]["uid"]
+            self._blog_urls = self._destination_urls(matches[0], destinations)
             self._identity = Identity(self.profile, username, blog)
             self.client.default_destination = blog
         return {
@@ -160,12 +169,76 @@ class MicroblogService:
             },
         }
 
+    @staticmethod
+    def _destination_urls(destination: dict, destinations: list[dict]) -> tuple[str, ...]:
+        # Micro.blog's UID remains native when published URLs use a custom domain.
+        # Only trust an unambiguous hostname supplied by the selected destination.
+        blog = destination["uid"]
+        aliases = [blog]
+        name = destination.get("name", "")
+        if (
+            urlparse(blog).path in {"", "/"}
+            and isinstance(name, str)
+            and re.fullmatch(r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}", name)
+        ):
+            competing = [
+                d
+                for d in destinations
+                if d is not destination
+                and (
+                    str(d.get("name", "")).lower() == name.lower()
+                    or urlparse(d.get("uid", "")).netloc.lower() == name.lower()
+                )
+            ]
+            if not competing:
+                aliases.append(f"https://{name.lower()}/")
+        return tuple(dict.fromkeys(aliases))
+
     def _scope(self, workflow: str | None = None) -> str:
         assert self._identity is not None
         values = [self._identity.username, self._identity.blog]
         if workflow:
             values += [self.consumer, workflow]
         return json.dumps(values)
+
+    def _reply_scope(self) -> str:
+        assert self._identity is not None
+        return json.dumps([self._identity.username, "native-replies"])
+
+    def _owns_url(self, target: str) -> bool:
+        parsed = urlparse(target)
+        path = unquote(parsed.path)
+        # Reject encoded delimiters and dot segments before HTTP normalization can
+        # redirect a path-scoped destination into a sibling blog.
+        if path != unquote(path) or "\\" in path or any(p in {".", ".."} for p in path.split("/")):
+            return False
+        if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password:
+            return False
+        return any(
+            parsed.netloc.lower() == urlparse(blog).netloc.lower()
+            and path.startswith(urlparse(blog).path.rstrip("/") + "/")
+            for blog in self._blog_urls
+        )
+
+    @staticmethod
+    def _ordered_items(result: dict) -> dict:
+        if not result["ok"]:
+            return result
+        try:
+            items = result["data"]["items"]
+            if not isinstance(items, list) or any(
+                not isinstance(i, dict) or not str(i.get("id", "")).isdigit() for i in items
+            ):
+                raise ValueError
+            ids = [int(i["id"]) for i in items]
+            if len(ids) != len(set(ids)):
+                raise ValueError
+            return {
+                "ok": True,
+                "data": {"items": sorted(items, key=lambda i: int(i["id"]), reverse=True)},
+            }
+        except (KeyError, TypeError, ValueError):
+            return failure("Invalid timeline page; checkpoint was not advanced", 502)
 
     def timeline(
         self, count: int = 20, since: str | None = None, before: str | None = None
@@ -175,15 +248,17 @@ class MicroblogService:
             since_id=int(since) if since else None,
             before_id=int(before) if before else None,
         )
+        result = self._ordered_items(result)
         if not result["ok"]:
             return result
-        items = result["data"].get("items", [])
+        items = result["data"]["items"]
         selected = items[:count]
         more = len(items) > count
         if selected and not more:
             probe = self.client.get_timeline(
                 count=1, since_id=int(since) if since else None, before_id=int(selected[-1]["id"])
             )
+            probe = self._ordered_items(probe)
             if not probe["ok"]:
                 return probe
             more = bool(probe["data"].get("items"))
@@ -218,9 +293,10 @@ class MicroblogService:
                     count=count, since_id=int(checkpoint) if checkpoint else None
                 )
             )
+            result = self._ordered_items(result)
             if not result["ok"]:
                 return result
-            raw = result["data"].get("items", [])
+            raw = result["data"]["items"]
             items = sorted(
                 [i for i in raw if not checkpoint or int(i["id"]) > int(checkpoint)],
                 key=lambda i: int(i["id"]),
@@ -253,9 +329,10 @@ class MicroblogService:
                 since_id=int(checkpoint) if checkpoint else None,
                 before_id=int(before) if before else None,
             )
+            page = self._ordered_items(page)
             if not page["ok"]:
                 return page
-            raw = page["data"].get("items", [])
+            raw = page["data"]["items"]
             if any(int(i["id"]) >= int(before) for i in raw):
                 return failure(
                     "Upstream pagination did not move backwards; checkpoint was not advanced", 502
@@ -389,7 +466,12 @@ class MicroblogService:
         return failure("Use a full post URL or numeric Micro.blog ID", 404)
 
     def post_get(self, identifier: str) -> dict:
+        identity = self.identity()
+        if not identity["ok"]:
+            return identity
         resolved = self.resolve_url(identifier)
+        if resolved["ok"] and not self._owns_url(resolved["data"]["url"]):
+            return failure("Post must belong to this server's selected blog", 403)
         return self.client.micropub_get(resolved["data"]["url"]) if resolved["ok"] else resolved
 
     def preview(self, **arguments) -> dict:
@@ -418,7 +500,7 @@ class MicroblogService:
             return failure("Nothing to update")
         if action == "post_reply" and not arguments["content"].strip():
             return failure("Content is empty")
-        scope = self._scope()
+        scope = self._reply_scope() if action == "post_reply" else self._scope()
         fingerprint = self.state.fingerprint(action, arguments)
         try:
             previous = self.state.lookup(scope, operation_id, fingerprint)
@@ -432,13 +514,7 @@ class MicroblogService:
             if not resolved["ok"]:
                 return resolved
             target = resolved["data"]["url"]
-            blog_url = urlparse(identity["data"]["blog"])
-            target_url = urlparse(target)
-            if (
-                target_url.scheme not in {"http", "https"}
-                or target_url.netloc != blog_url.netloc
-                or not target_url.path.startswith(blog_url.path.rstrip("/") + "/")
-            ):
+            if not self._owns_url(target):
                 return failure("Post must belong to this server's selected blog", 403)
             source = self.client.micropub_get(target)
             if not source["ok"]:
@@ -495,7 +571,15 @@ class MicroblogService:
             stored["error"] = (
                 "write_outcome_unknown" if result["outcome"] == "unknown" else "write_failed"
             )
-        stored["data"] = {k: v for k, v in result.get("data", {}).items() if k in {"url", "id"}}
+        token = getattr(self.client, "token", None)
+        stored["data"] = {
+            k: str(v)
+            for k, v in result.get("data", {}).items()
+            if k in {"url", "id"}
+            and isinstance(v, (str, int))
+            and not isinstance(v, bool)
+            and not (isinstance(token, str) and token and token in str(v))
+        }
         self.state.finish(scope, operation_id, stored)
         return result
 
@@ -504,4 +588,6 @@ class MicroblogService:
         if not identity["ok"]:
             return identity
         result = self.state.operation(self._scope(), operation_id)
+        if result is None:
+            result = self.state.operation(self._reply_scope(), operation_id)
         return result if result is not None else failure("Operation not found", 404)
