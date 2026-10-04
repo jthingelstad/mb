@@ -50,6 +50,16 @@ def run(
     latest_id = _item_id(items[0]) if items else checkpoint
     truncated = total_new is not None and total_new > len(items)
     advanced = False
+    if advance and truncated:
+        output_or_exit(
+            {
+                "ok": False,
+                "error": "Cannot advance a truncated catchup; read the remaining pages first",
+                "code": 409,
+            },
+            fmt,
+        )
+        return
     if advance and latest_id is not None:
         config.save_named_checkpoint("catchup", latest_id, profile=profile)
         advanced = True

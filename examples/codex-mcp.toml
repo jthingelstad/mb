@@ -1,0 +1,9 @@
+# Review and adapt; this file is not installed automatically.
+[mcp_servers.mb]
+command = "/absolute/path/to/mb2/.venv/bin/mb"
+args = ["--profile", "default", "--blog", "https://agent.example/", "mcp", "--consumer", "dot", "--read-only"]
+startup_timeout_sec = 20
+tool_timeout_sec = 120
+default_tools_approval_mode = "prompt"
+# Uses the existing MB profile on this host. Do not add a literal token here.
+# Operators using inherited environment auth can forward MB_TOKEN via env_vars.

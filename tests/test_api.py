@@ -146,7 +146,9 @@ class TestMicropub:
 
     def test_upload_photo(self, mock_client, tmp_path):
         photo = tmp_path / "test.jpg"
-        photo.write_bytes(b"image-bytes")
+        from PIL import Image
+
+        Image.new("RGB", (2, 2), "blue").save(photo)
         result = mock_client.micropub_upload_photo(str(photo))
         assert result["ok"] is True
         assert result["data"]["url"] == "https://cdn.micro.blog/photos/example-upload.jpg"

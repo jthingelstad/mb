@@ -1,3 +1,22 @@
+## mb v2.0.0rc1 — candidate, not published
+
+- Optional local stdio `mb mcp` with 23 typed tools and packaged workflow guidance. The base CLI stays lightweight and imports no MCP runtime.
+- Shared post validation/publishing, native reply, thread and mention services. Structured envelopes remain; post/upload calls have explicit major-version changes (see [migration guide](docs/migration-2.0.md)).
+- Verified canonical blog identity, consumer-scoped attention state, lossless timeline paging and explicit revision-checked acknowledgement. Recent mentions/source windows report limited coverage. CLI cursor behavior remains independent.
+- Durable account/blog post receipts and account-scoped native reply receipts with caller operation IDs, argument fingerprints and explicit unknown outcomes. No automatic resend; interrupted pending operations require human reconciliation.
+- Review fixes: resolve canonical/custom destination URLs safely; reject malformed feed/source and write confirmations; order pagination by ID and refuse invalid pages; exclude echoed credential values from stored recovery metadata.
+- Selected-blog server-side search/categories; bounded Discover/profile/own-reply reads and public URL conversations. The existing credential lacks a required scope for URL conversations; HTTP 403 is preserved with actionable guidance and no access-mode fallback.
+- Guarded existing-draft publish using reviewed source hash; All CLI post/upload writes require caller-stable `--operation-id` and shared services; edit/delete enforce selected-blog ownership. No silently generated ID or direct legacy escape path.
+- Reviewed local image preview/upload for CLI and MCP, explicit allowed directory, Pillow decoding/normalization, metadata removal, selected destination, file hash guard and separate upload/post receipts. Alt text accompanies the post; HTTP 202 is labelled accepted/processing.
+- Removed combined `--photo` and implicit absolute-path/remote uploads with clear migration errors. `upload` aliases the reviewed relative-file media workflow; dry-run needs no ID.
+- Keyword mute and DELETE unmute/unblock contract fixes. Content-index and Homebrew release plans documented; neither cache nor tap is implemented.
+- Read-only mode, structured errors and tool annotations; synthetic Codex-style stdio lifecycle tests and OpenClaw configuration example.
+- CLI fixes: refuse truncated inbox/catchup advancement; preserve pipeline record boundaries and `auth --blog`; contain transport failures and expose retry metadata; remove the undeclared Click runtime import uncovered by an isolated wheel install. Draft responses retain their preview link on the initial call.
+
+No new credentials, persistent client registration, cron changes or real posts are part of this candidate. Coordinate the installed 1.x migration before tagging or publishing a package. See [MCP contracts and remaining limitations](docs/mcp.md).
+
+---
+
 ## mb v1.1.0
 
 ### Heartbeat auto-advance

@@ -45,10 +45,12 @@ class TestMicropubGet:
 
 class TestSearchWithCategory:
     def test_search_blog_with_category(self, mock_client):
+        mock_client.default_destination = "https://testuser.micro.blog/"
         result = mock_client.search_blog("testuser", query="hello", category="journal")
         assert result["ok"] is True
 
     def test_search_blog_without_category(self, mock_client):
+        mock_client.default_destination = "https://testuser.micro.blog/"
         result = mock_client.search_blog("testuser", query="hello")
         assert result["ok"] is True
 

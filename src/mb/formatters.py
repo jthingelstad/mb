@@ -54,10 +54,10 @@ def _extract_username(author: dict) -> str:
 
 def _agent_post_line(item: dict) -> str:
     """Render one post item for agent output."""
-    post_id = item.get("id", "?")
-    author = _extract_username(item.get("author", {}))
+    post_id = " ".join(str(item.get("id", "?")).split())
+    author = " ".join(_extract_username(item.get("author", {})).split())
     time = _relative_time(item.get("date_published", ""))
-    content = strip_html(item.get("content_html", "")).strip()
+    content = " ".join(strip_html(item.get("content_html", "")).split())
     cats = item.get("tags", [])
     if not cats:
         cats = (
@@ -65,7 +65,7 @@ def _agent_post_line(item: dict) -> str:
             if isinstance(item.get("_microblog"), dict)
             else []
         )
-    cat_str = f" [{', '.join(cats)}]" if cats else ""
+    cat_str = f" [{', '.join(' '.join(str(c).split()) for c in cats)}]" if cats else ""
     indent = "  " * item.get("depth", 0)
     return f"{indent}[{post_id}] @{author} ({time}){cat_str}: {content}"
 
@@ -98,9 +98,24 @@ def output_human(data: dict) -> None:
     console = Console()
     if not data.get("ok"):
         console.print(f"[red]Error:[/red] {data.get('error', 'Unknown error')}")
+        if data.get("outcome"):
+            console.print(f"outcome={data['outcome']}")
+        if data.get("operation_id"):
+            console.print(f"operation_id={data['operation_id']}")
         return
 
     payload = data.get("data", {})
+    if data.get("operation_id"):
+        print(f"operation_id={data['operation_id']} outcome={data.get('outcome', 'unknown')}")
+    if isinstance(payload, dict) and payload.get("coverage"):
+        detail = f"coverage={payload['coverage']}"
+        if "coverage_complete" in payload:
+            detail += f" complete={str(payload['coverage_complete']).lower()}"
+        if "truncated" in payload:
+            detail += f" truncated={str(payload['truncated']).lower()}"
+        if payload.get("identity", {}).get("blog"):
+            detail += f" blog={payload['identity']['blog']}"
+        print(detail)
 
     if isinstance(payload, dict) and payload.get("kind") == "upload":
         console.print(f"[green]Uploaded[/green] {payload.get('url', '')}")
@@ -352,10 +367,27 @@ def output_human(data: dict) -> None:
 def output_agent(data: dict) -> None:
     """Print condensed plain-text optimized for LLM context windows."""
     if not data.get("ok"):
-        print(f"ERROR: {data.get('error', 'Unknown error')}")
+        print(f"ERROR: {' '.join(str(data.get('error', 'Unknown error')).split())}")
+        if data.get("retry_after") is not None:
+            print(f"retry_after={data['retry_after']}")
+        if data.get("outcome"):
+            print(f"outcome={data['outcome']}")
+        if data.get("operation_id"):
+            print(f"operation_id={data['operation_id']}")
         return
 
     payload = data.get("data", {})
+    if data.get("operation_id"):
+        print(f"operation_id={data['operation_id']} outcome={data.get('outcome', 'unknown')}")
+    if isinstance(payload, dict) and payload.get("coverage"):
+        detail = f"coverage={payload['coverage']}"
+        if "coverage_complete" in payload:
+            detail += f" complete={str(payload['coverage_complete']).lower()}"
+        if "truncated" in payload:
+            detail += f" truncated={str(payload['truncated']).lower()}"
+        if payload.get("identity", {}).get("blog"):
+            detail += f" blog={payload['identity']['blog']}"
+        print(detail)
 
     if isinstance(payload, dict) and payload.get("kind") == "upload":
         line = payload.get("url", "")
@@ -433,7 +465,9 @@ def output_agent(data: dict) -> None:
         if payload.get("advanced"):
             parts.append("saved=true")
         print(" ".join(parts))
-        print(f"new_count={payload.get('new_count', 0)}")
+        print(
+            f"new_count={payload.get('new_count', 0)} truncated={str(payload.get('truncated', False)).lower()}"
+        )
         for item in payload.get("items", []):
             print(_agent_post_line(item))
         return
@@ -450,7 +484,10 @@ def output_agent(data: dict) -> None:
         if payload.get("advanced"):
             parts.append("saved=true")
         print(" ".join(parts))
-        detail_parts = [f"new_count={payload.get('new_count', 0)}"]
+        detail_parts = [
+            f"new_count={payload.get('new_count', 0)}",
+            f"truncated={str(payload.get('truncated', False)).lower()}",
+        ]
         if payload.get("window_count") is not None:
             detail_parts.append(f"window_count={payload['window_count']}")
         filters = payload.get("filters", {})
@@ -475,7 +512,7 @@ def output_agent(data: dict) -> None:
                 parts.append(f"date={entry['date_published'][:10]}")
             line = " ".join(parts)
             if entry.get("content_text"):
-                line = f"{line}: {entry['content_text']}"
+                line = f"{line}: {' '.join(entry['content_text'].split())}"
             print(line)
             if entry.get("conversation_items"):
                 print("conversation:")
@@ -509,7 +546,7 @@ def output_agent(data: dict) -> None:
                 parts.append(f"last_post={entry['last_post_date'][:10]}")
             line = " ".join(parts)
             if entry.get("last_post_content_text"):
-                line = f"{line}: {entry['last_post_content_text']}"
+                line = f"{line}: {' '.join(entry['last_post_content_text'].split())}"
             print(line)
         for entry in payload.get("errors", []):
             print(f"@{entry.get('username', '?')} error={entry.get('error', 'lookup_error')}")

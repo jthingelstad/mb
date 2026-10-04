@@ -39,7 +39,7 @@ src/mb/commands/timeline.py   Timeline, discover, check, checkpoint
 src/mb/commands/conversation.py Conversation thread formatting
 src/mb/commands/user.py       User and social graph commands
 src/mb/commands/blog.py       Read own posts, categories, search
-src/mb/commands/upload.py     Image uploads from local files or URLs
+src/mb/commands/upload.py     Reviewed media upload alias
 tests/                        Unit and CLI integration tests
 ```
 
@@ -86,6 +86,8 @@ Legacy flat config is still supported for the default profile and auto-migrates 
 
 ## CLI Surface
 
+2.0 post/upload writes require caller-stable `--operation-id`, shared services and selected-blog guards. Preserve IDs and exact arguments across retries. Never silently generate a new ID for an uncertain outcome. Combined `--photo` and implicit/remote uploads are removed. See [migration/adoption](docs/migration-2.0.md).
+
 Global flags can appear before or after the command:
 
 ```text
@@ -107,7 +109,7 @@ mb heartbeat
 mb inbox
 mb catchup
 mb checkpoint list
-mb upload <path-or-url>
+mb media preview FILE --alt TEXT   Review under explicit --media-root DIR
 mb following
 mb follow <username|->
 mb unfollow <username|->
@@ -122,22 +124,22 @@ mb poll --since <id> --interval 30
 Post commands:
 
 ```text
-mb post new "Hello"
-mb post short "Hello"
-mb post new --content "Hello"
-mb post new --file post.md
-mb post new --draft
-mb post short --strict-300 "Hello"
-mb post new --photo image.jpg --alt "desc"
-mb post new --photo-url https://...
-mb post new --category tag
+mb post new "Hello" --operation-id example-1
+mb post short "Hello" --operation-id example-2
+mb post new --content "Hello" --operation-id example-3
+mb post new --file post.md --operation-id example-4
+mb post new "Draft text" --draft --operation-id example-5
+mb post short --strict-300 "Hello" --operation-id example-6
+mb --media-root ./reviewed media preview image.jpg --alt "desc"  # Upload separately after review
+mb post new "Caption" --photo-url https://... --operation-id example-7
+mb post new "Tagged text" --category tag --operation-id example-8
 mb post new --dry-run "Hello"
 mb post get <id-or-url>
-mb post edit <id-or-url> --content "Updated"
-mb post edit <id-or-url> --title "Updated"
-mb post edit <id-or-url> --category tag
-mb post reply <id-or-url> "Reply text"
-mb post delete <id-or-url>
+mb post edit <id-or-url> --content "Updated" --operation-id example-9
+mb post edit <id-or-url> --title "Updated" --operation-id example-10
+mb post edit <id-or-url> --category tag --operation-id example-11
+mb post reply <id-or-url> "Reply text" --operation-id example-12
+mb post delete <id-or-url> --operation-id example-13
 mb post list
 mb post list --drafts
 ```
@@ -255,7 +257,7 @@ mb catchup --advance
 - `mb inbox` uses its own `inbox_checkpoint`
 - `mb checkpoint ...` is the first-class cursor management surface for `timeline`, `heartbeat`, `inbox`, and `catchup`
 - selective inbox filters are for inspection, not cursor advancement; do not combine `mb inbox --advance` with `--reason`, `--fresh-hours`, or `--max-age-days`
-- `mb upload` accepts either a local image path or a remote image URL
+- `mb upload` aliases reviewed `media upload`: relative image under explicit `--media-root`, alt, preview hash and caller-stable ID; no remote fetching
 
 Blog commands:
 
@@ -315,16 +317,16 @@ Practical implications:
 Install:
 
 ```bash
-uv sync --locked
+uv sync --locked --extra mcp
 ```
 
 Run the same checks CI uses:
 
 ```bash
-uv run --locked ruff check .
-uv run --locked ruff format --check .
-uv run --locked mypy src/mb --ignore-missing-imports
-uv run --locked pytest tests/ -q --cov=mb --cov-report=term-missing --cov-fail-under=70
+uv run --locked --extra mcp ruff check .
+uv run --locked --extra mcp ruff format --check .
+uv run --locked --extra mcp mypy src/mb --ignore-missing-imports
+uv run --locked --extra mcp pytest tests/ -q --cov=mb --cov-report=term-missing --cov-fail-under=70
 ```
 
 Testing guidance:
@@ -333,3 +335,10 @@ Testing guidance:
 - No live API calls should be added to tests
 - Favor CLI tests for argument parsing and output behavior
 - Favor API tests for transport and response normalization
+
+
+## MCP candidate
+
+`mb mcp` is a local stdio adapter over shared domain/services, not a shell wrapper. The optional `mcp` extra must not enter the base CLI import path. See `docs/mcp.md` for typed contracts and client examples. Keep operational guidance (`mb-cli`, `mb-mcp`) separate from the two behavior skills. `src/mb/guidance/mcp.md` ships in the wheel and is exposed as `mb://guide`.
+
+Pure MCP reads never advance. Consumer checkpoints are separate from CLI config cursors; only a complete receipt may be acknowledged. Operation IDs and receipts are shared per verified account/blog in one state file. Unknown writes are never auto-resent. Do not test with live writes, register persistent clients, change installed auth/cron, or replace 1.x as part of candidate verification.

@@ -34,14 +34,24 @@ SELF-REVIEW
   mb blog categories        List all tags/categories on your blog.
 
 PUBLISHING
-  mb post new "Hello"       Create a post. Accepts --title, --file, --draft, --photo, --category.
+  All post writes require --operation-id TASK_ID. Persist ID and exact arguments before
+  invocation; reuse both on retries. Never use a fresh ID after uncertainty. Share one
+  --state-file across CLI/MCP. Edit/delete require an owned exact URL or numeric ID.
+  mb operation-status ID   Inspect a receipt; unknown/pending requires operator read-back.
+  Combined --photo is removed; review and upload separately with a different ID.
+  mb post new "Hello" --operation-id TASK_CREATE
+                            Create a post. Accepts --title, --file, --draft, --photo-url, --category.
                             Use this for long-form posts or posts with titles.
-  mb post short "Hello"     Short-form post, no title. Optional --strict-300 character limit.
+  mb post short "Hello" --operation-id TASK_SHORT
+                            Short-form post, no title. Optional --strict-300 character limit.
                             Use this for microblog-style posts (like tweets). If you are unsure
                             which to use, post new is the safe default.
-  mb post edit <id> ...     Edit content, title, or categories on an existing post.
-  mb post reply <id> "text" Reply to a post natively.
-  mb post delete <id>       Delete a post.
+  mb post edit <id> --operation-id TASK_EDIT ...
+                            Edit content, title, or categories on an existing post.
+  mb post reply <id> "text" --operation-id TASK_REPLY
+                            Reply to a post natively.
+  mb post delete <id> --operation-id TASK_DELETE
+                            Delete a post.
   mb post new --dry-run "x" Validate without posting. Useful for testing content before committing.
 
 SOCIAL GRAPH
@@ -69,8 +79,14 @@ CHECKPOINTS
   mb checkpoint clear <n>   Reset a checkpoint.
 
 UPLOADS
-  mb upload <path-or-url>   Upload a local image or fetch a remote URL, return hosted URL.
-                            Use with mb post new --photo-url <returned-url>.
+  mb --media-root DIR media preview FILE --alt TEXT
+                            Review a relative static image, hash, alt and destination.
+  mb --media-root DIR media upload FILE --alt TEXT --sha256 HASH --operation-id ID
+                            Upload the reviewed image; preserve returned URL and receipt.
+                            mb upload is an alias with the same required flags.
+                            No remote fetch or implicit absolute-path upload.
+                            Then post new --photo-url URL --alt TEXT --operation-id POST_ID.
+                            Never repeat upload merely because creating the post failed.
 
 OUTPUT FORMATS
   Default is --format agent (compact text for LLM context windows).

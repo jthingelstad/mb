@@ -1,0 +1,13 @@
+{
+  "mcp": {
+    "servers": {
+      "mb": {
+        "transport": "stdio",
+        "command": "/absolute/path/to/mb2/.venv/bin/mb",
+        "args": ["--profile", "default", "--blog", "https://agent.example/", "mcp", "--consumer", "openclaw", "--read-only"],
+        "requestTimeoutMs": 120000,
+        "connectionTimeoutMs": 20000
+      }
+    }
+  }
+}

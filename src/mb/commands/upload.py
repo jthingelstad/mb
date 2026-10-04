@@ -1,62 +1,39 @@
-"""Media upload commands."""
+"""Compatibility spelling for the reviewed, receipt-aware media workflow."""
 
-import mimetypes
 from pathlib import Path
-from urllib.parse import urlparse
 
-import httpx
 import typer
 
-from mb.commands import get_client, get_format, output_or_exit
-
-
-def _download_image(url: str) -> tuple[str, bytes, str | None] | dict:
-    """Download an image from a remote URL."""
-    try:
-        with httpx.Client(follow_redirects=True, timeout=30.0) as client:
-            resp = client.get(url)
-    except httpx.HTTPError as exc:
-        return {"ok": False, "error": f"Unable to fetch image URL: {exc}", "code": 400}
-
-    if resp.status_code >= 400:
-        return {
-            "ok": False,
-            "error": f"Image URL returned HTTP {resp.status_code}",
-            "code": resp.status_code,
-        }
-
-    content_type = resp.headers.get("Content-Type", "").split(";")[0].strip() or None
-    if content_type and not content_type.startswith("image/"):
-        return {"ok": False, "error": f"Remote URL is not an image: {content_type}", "code": 400}
-
-    parsed = urlparse(url)
-    filename = Path(parsed.path).name or "upload"
-    if "." not in filename:
-        extension = mimetypes.guess_extension(content_type or "") or ".img"
-        filename = f"{filename}{extension}"
-    return filename, resp.content, content_type
+from mb.commands import get_format, get_service, output_or_exit
 
 
 def run(
     ctx: typer.Context,
     source: str,
     alt: str | None = None,
+    sha256: str | None = None,
+    operation_id: str | None = None,
 ):
-    """Upload a local image file or a remote image URL."""
-    client = get_client(ctx)
-    fmt = get_format(ctx)
-
-    if source.startswith("http://") or source.startswith("https://"):
-        downloaded = _download_image(source)
-        if isinstance(downloaded, dict):
-            output_or_exit(downloaded, fmt)
-            return
-        filename, content, content_type = downloaded
-        result = client.micropub_upload_bytes(filename, content, alt=alt, content_type=content_type)
-    else:
-        result = client.micropub_upload_photo(source, alt=alt)
-
-    if result.get("ok"):
-        result["data"]["source"] = source
-        result["data"]["kind"] = "upload"
-    output_or_exit(result, fmt)
+    """Upload only a reviewed relative image; legacy implicit fetching is removed."""
+    if source.startswith(("http://", "https://")) or Path(source).is_absolute():
+        output_or_exit(
+            {
+                "ok": False,
+                "error": "Legacy path/URL upload was removed in 2.0. Save the image under an "
+                "explicit --media-root, run media preview with its relative path and --alt, "
+                "then media upload with the reviewed --sha256 and stable --operation-id. "
+                "MB does not fetch remote images.",
+                "code": 400,
+                "outcome": "not_applied",
+            },
+            get_format(ctx),
+        )
+        return
+    output_or_exit(
+        get_service(ctx).write(
+            "media_upload",
+            operation_id or "",
+            dict(file=source, alt=alt or "", sha256=sha256 or ""),
+        ),
+        get_format(ctx),
+    )

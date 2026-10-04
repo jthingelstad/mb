@@ -8,7 +8,7 @@ import typer.core
 
 from mb import config
 from mb.api import MicroblogClient
-from mb.commands import blog, checkpoint, conversation, lookup, post, timeline, user
+from mb.commands import blog, checkpoint, conversation, lookup, media, post, timeline, user
 from mb.commands import catchup as catchup_cmd
 from mb.commands import guide as guide_cmd
 from mb.commands import heartbeat as heartbeat_cmd
@@ -20,7 +20,16 @@ from mb.formatters import output
 class _FlexibleGroup(typer.core.TyperGroup):
     """Group that allows global options (-p, -f, --human, -b) after the subcommand."""
 
-    _VALUED_OPTS = {"-p", "--profile", "-f", "--format", "-b", "--blog"}
+    _VALUED_OPTS = {
+        "-p",
+        "--profile",
+        "-f",
+        "--format",
+        "-b",
+        "--blog",
+        "--state-file",
+        "--media-root",
+    }
     _FLAG_OPTS = {"--human"}
 
     def parse_args(self, ctx, args):
@@ -44,6 +53,7 @@ class _FlexibleGroup(typer.core.TyperGroup):
 app = typer.Typer(
     cls=_FlexibleGroup, add_completion=False, no_args_is_help=True, rich_markup_mode=None
 )
+app.add_typer(media.app, name="media", help="Preview and upload reviewed local images")
 app.add_typer(post.app, name="post", help="Publishing commands")
 app.add_typer(timeline.app, name="timeline", help="Reading/discovery commands")
 app.add_typer(user.app, name="user", help="Social graph commands")
@@ -93,6 +103,12 @@ def main(
     human: bool = typer.Option(False, "--human", help="Shortcut for --format human"),
     profile: str = typer.Option("default", "--profile", "-p", help="Config profile to use"),
     blog_name: str = typer.Option(None, "--blog", "-b", help="Blog destination (name or URL)"),
+    state_file: str | None = typer.Option(
+        None, "--state-file", help="Shared local operation receipts"
+    ),
+    media_root: str | None = typer.Option(
+        None, "--media-root", help="Explicit allowed local image directory"
+    ),
 ):
     """mb — micro.blog CLI for agents."""
     ctx.ensure_object(dict)
@@ -100,16 +116,16 @@ def main(
         fmt = "human"
     else:
         # MB_FORMAT env var as default; explicit --format flag overrides
-        import click
-
         fmt_source = ctx.get_parameter_source("fmt")
-        explicitly_set = fmt_source is not None and fmt_source != click.core.ParameterSource.DEFAULT
+        explicitly_set = fmt_source is not None and fmt_source.name != "DEFAULT"
         if not explicitly_set:
             env_fmt = os.environ.get("MB_FORMAT")
             if env_fmt:
                 fmt = env_fmt
     ctx.obj["format"] = fmt
     ctx.obj["profile"] = profile
+    ctx.obj["state_file"] = state_file
+    ctx.obj["media_root"] = media_root
     if blog_name:
         ctx.obj["blog"] = blog_name
 
@@ -130,6 +146,8 @@ def auth(
     result = client.verify_token()
     if result["ok"]:
         username = result["data"].get("username", "")
+        # Flexible global option parsing moves --blog into the parent context.
+        blog_dest = blog_dest or ctx.obj.get("blog")
         config.save_config(token=token, username=username, blog=blog_dest, profile=profile)
         data = {"username": username, "message": "Token saved", "profile": profile}
         if blog_dest:
@@ -234,9 +252,10 @@ def discover_alias(
     list_collections: bool = typer.Option(
         False, "--list", help="List curated discover collections"
     ),
+    count: int = typer.Option(20, "--count", "-n", min=1, max=50),
 ):
     """Show posts from a Micro.blog Discover collection."""
-    timeline.discover(ctx, collection=collection, list_collections=list_collections)
+    timeline.discover(ctx, collection=collection, list_collections=list_collections, count=count)
 
 
 @app.command()
@@ -310,11 +329,13 @@ def catchup(
 @app.command()
 def upload(
     ctx: typer.Context,
-    source: str = typer.Argument(..., help="Local image path or remote image URL"),
+    source: str = typer.Argument(..., help="Reviewed relative image under --media-root"),
     alt: str = typer.Option(None, "--alt", help="Alt text for the uploaded image"),
+    sha256: str | None = typer.Option(None, "--sha256", help="Input hash from media preview"),
+    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable caller upload ID"),
 ):
-    """Upload an image and return its hosted URL."""
-    upload_cmd.run(ctx, source=source, alt=alt)
+    """Alias for media upload; requires the reviewed hash, alt text and stable ID."""
+    upload_cmd.run(ctx, source=source, alt=alt, sha256=sha256, operation_id=operation_id)
 
 
 # ── Conversation (top-level) ───────────────────────────────
@@ -374,3 +395,54 @@ def poll(
             time.sleep(poll_interval)
     except KeyboardInterrupt:
         pass
+
+
+@app.command("mcp")
+def mcp_command(
+    ctx: typer.Context,
+    consumer: str = typer.Option(
+        "dot", "--consumer", help="Independent attention consumer (dot, openclaw, etc.)"
+    ),
+    read_only: bool = typer.Option(
+        False, "--read-only", help="Disable remote writes and checkpoint acknowledgement"
+    ),
+):
+    """Serve optional MCP tools over local stdio. Install mb[mcp] first."""
+    from pathlib import Path
+
+    try:
+        import anyio
+
+        from mb.mcp_server import serve
+        from mb.services import AuthenticationUnavailable, MicroblogService
+    except ImportError:
+        typer.echo("MCP support is optional. Install with: uv tool install 'mb[mcp]'", err=True)
+        raise typer.Exit(1) from None
+    profile = get_profile(ctx)
+    blog_dest = ctx.obj.get("blog")
+    state_file = ctx.obj.get("state_file")
+    state_path = Path(state_file) if state_file else config.CONFIG_DIR / "mcp-state.sqlite3"
+
+    def service_factory():
+        token = config.get_token(profile=profile)
+        if not token:
+            raise AuthenticationUnavailable("No token configured")
+        return MicroblogService(
+            MicroblogClient(token),
+            profile,
+            blog_dest or config.get_blog(profile=profile),
+            consumer,
+            state_path,
+            read_only,
+            media_root=Path(ctx.obj["media_root"]) if ctx.obj.get("media_root") else None,
+        )
+
+    anyio.run(serve, service_factory)
+
+
+@app.command("operation-status")
+def operation_status(ctx: typer.Context, operation_id: str = typer.Argument(...)):
+    """Read the shared CLI/MCP durable write receipt."""
+    from mb.commands import get_service, output_or_exit
+
+    output_or_exit(get_service(ctx).operation_status(operation_id), get_format(ctx))
