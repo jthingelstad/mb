@@ -45,12 +45,13 @@ class Timeline(Input):
 
 
 class Conversation(Input):
-    post_id: PostID
+    post_id: Annotated[str, Field(min_length=1, max_length=2048)]
 
 
 class BlogPosts(Input):
     count: Count = 10
     drafts: bool = False
+    category: str | None = None
 
 
 class PostGet(Input):
@@ -62,6 +63,7 @@ class Preview(Input):
     title: str | None = None
     draft: bool = False
     photo_url: str | None = None
+    photo_alt: str | None = None
     categories: list[str] | None = None
 
 
@@ -86,6 +88,41 @@ class Delete(PostGet):
     operation_id: OperationID
 
 
+class Publish(PostGet):
+    source_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    operation_id: OperationID
+
+
+class Discover(Input):
+    count: Count = 20
+    collection: str | None = None
+
+
+class Profile(Input):
+    username: Annotated[str, Field(pattern=r"^[A-Za-z0-9_.-]{1,64}$")]
+    count: Count = 10
+
+
+class ReadCount(Input):
+    count: Count = 10
+
+
+class Search(Input):
+    query: Annotated[str, Field(min_length=1, max_length=1000)]
+    count: Count = 20
+    category: str | None = None
+
+
+class MediaPreview(Input):
+    file: Annotated[str, Field(min_length=1, max_length=1024)]
+    alt: Annotated[str, Field(min_length=1, max_length=2000)]
+
+
+class MediaUpload(MediaPreview):
+    sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    operation_id: OperationID
+
+
 class Acknowledge(Input):
     receipt: Annotated[str, Field(min_length=1, max_length=128)]
 
@@ -96,6 +133,32 @@ class Operation(Input):
 
 # The catalog is static; listing capabilities never opens authentication or contacts the network.
 CATALOG: dict[str, tuple[type[Input], str]] = {
+    "discover": (
+        Discover,
+        "Read bounded curated Discover posts, account scope. Collections listed in mb://discover-collections.",
+    ),
+    "profile_get": (Profile, "Read a public user profile and bounded recent posts, account scope."),
+    "replies": (
+        ReadCount,
+        "Read bounded recent replies sent by this account; separate from the selected blog.",
+    ),
+    "blog_search": (
+        Search,
+        "Server-filtered source search on the verified selected blog. Coverage is bounded; never assume a complete archive.",
+    ),
+    "blog_categories": (Empty, "Read category names for the verified selected blog."),
+    "post_publish": (
+        Publish,
+        "Publish an existing unchanged draft. Review post_get, then supply its source_hash and stable operation_id; requires user authorization.",
+    ),
+    "media_preview": (
+        MediaPreview,
+        "Validate a relative local static image under the explicitly enabled media directory. Show dimensions, upload hash, alt text and selected destination without uploading.",
+    ),
+    "media_upload": (
+        MediaUpload,
+        "Upload the reviewed image using its sha256 and a stable operation_id. Requires user authorization. Use returned URL and alt in post_preview/post_create with a separate operation ID; accepted does not mean publicly available yet.",
+    ),
     "identity": (
         Empty,
         "Verify the immutable account, canonical blog, consumer and read-only mode. Start here.",
@@ -118,7 +181,7 @@ CATALOG: dict[str, tuple[type[Input], str]] = {
     ),
     "conversation": (
         Conversation,
-        "Expand a native Micro.blog conversation, ordered from root to replies.",
+        "Expand a numeric native conversation or public URL conversation including available Webmentions. A URL 404 is labelled not_found; no archive guarantee.",
     ),
     "blog_posts": (
         BlogPosts,
@@ -157,7 +220,15 @@ CATALOG: dict[str, tuple[type[Input], str]] = {
         "Inspect a durable write receipt. Unknown outcomes require read-back and human review; never resend under a new ID automatically.",
     ),
 }
-MUTATIONS = {"post_create", "post_reply", "post_edit", "post_delete", "checkpoint_ack"}
+REMOTE_WRITES = {
+    "post_create",
+    "post_reply",
+    "post_edit",
+    "post_delete",
+    "post_publish",
+    "media_upload",
+}
+MUTATIONS = REMOTE_WRITES | {"checkpoint_ack"}
 OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -214,7 +285,7 @@ class Adapter:
             identity = service.identity()
             if not identity["ok"] or name == "identity":
                 return identity
-            if name in {"post_create", "post_reply", "post_edit", "post_delete"}:
+            if name in REMOTE_WRITES:
                 operation_id = arguments.pop("operation_id")
                 return service.write(name, operation_id, arguments)
             if name == "checkpoint_ack":
@@ -259,7 +330,7 @@ class Adapter:
                         "outcome": "unknown",
                         "operation_id": (params.arguments or {}).get("operation_id"),
                     }
-                    if params.name.startswith("post_") and params.name in MUTATIONS
+                    if params.name in REMOTE_WRITES
                     else {}
                 ),
             )

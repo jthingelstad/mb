@@ -27,6 +27,7 @@ def preview_post(
     title: str | None = None,
     draft: bool = False,
     photo_url: str | None = None,
+    photo_alt: str | None = None,
     categories: list[str] | None = None,
 ) -> dict:
     """Pure validation used by both publishing interfaces."""
@@ -36,6 +37,8 @@ def preview_post(
         urlparse(photo_url).scheme not in {"http", "https"} or not urlparse(photo_url).netloc
     ):
         return failure("Photo URL must use http or https")
+    if photo_alt is not None and not photo_url:
+        return failure("Photo alt text requires a photo URL")
     return {
         "ok": True,
         "data": {
@@ -43,6 +46,7 @@ def preview_post(
             "title": title,
             "draft": draft,
             "photo_url": photo_url,
+            "photo_alt": photo_alt,
             "categories": categories or [],
             "char_count": len(content),
         },
@@ -77,6 +81,41 @@ def reply_post(client: MicroblogClient, post_id: int, content: str) -> dict:
     return client.post_reply(post_id, content)
 
 
+def source_hash(data: dict) -> str:
+    return StateStore.fingerprint(
+        "post_source", {"type": data.get("type"), "properties": data.get("properties", {})}
+    )
+
+
+def read_source(client: MicroblogClient, url: str) -> dict:
+    result = client.micropub_get(url)
+    if result["ok"]:
+        result = {**result, "data": {**result["data"], "source_hash": source_hash(result["data"])}}
+    return result
+
+
+def read_conversation(client: MicroblogClient, identifier: str) -> dict:
+    if identifier.isdigit():
+        result = client.get_conversation(int(identifier))
+        coverage = "native-thread"
+    elif identifier.startswith(("https://", "http://")):
+        result = client.get_url_conversation(identifier)
+        coverage = "url-conversation"
+    else:
+        return failure("Use a numeric Micro.blog ID or full public post URL")
+    if not result["ok"]:
+        return result
+    return {
+        "ok": True,
+        "data": {
+            **result["data"],
+            "items": [normalize_post(i) for i in _build_thread(result["data"]["items"])],
+            "coverage": coverage,
+            "scope": "account",
+        },
+    }
+
+
 def normalize_post(item: dict) -> dict:
     content = item.get("content_html") or item.get("content_text") or ""
     if isinstance(content, dict):
@@ -108,6 +147,7 @@ class MicroblogService:
         consumer: str,
         state_path: Path,
         read_only: bool = False,
+        media_root: Path | None = None,
     ):
         self.client = client
         self.profile = profile
@@ -115,6 +155,7 @@ class MicroblogService:
         self.consumer = consumer
         self.state = StateStore(state_path)
         self.read_only = read_only
+        self.media_root = media_root
         self._identity: Identity | None = None
         self._blog_urls: tuple[str, ...] = ()
         self._receipts: dict[str, dict] = {}
@@ -155,6 +196,21 @@ class MicroblogService:
                         return failure("Choose an explicit --blog destination", 400)
                     matches = destinations
                 blog = matches[0]["uid"]
+            endpoint = configuration["data"].get("media-endpoint")
+            if endpoint:
+                parsed = urlparse(endpoint)
+                trusted = urlparse(self.client.base_url)
+                if (
+                    parsed.scheme != trusted.scheme
+                    or parsed.netloc != trusted.netloc
+                    or parsed.username
+                    or parsed.fragment
+                ):
+                    return failure(
+                        "Configured media endpoint must use the authenticated Micro.blog origin",
+                        502,
+                    )
+                self.client.media_endpoint = endpoint
             self._blog_urls = self._destination_urls(matches[0], destinations)
             self._identity = Identity(self.profile, username, blog)
             self.client.default_destination = blog
@@ -423,17 +479,70 @@ class MicroblogService:
             return failure(str(exc), 409)
 
     def conversation(self, post_id: str) -> dict:
-        result = self.client.get_conversation(int(post_id))
+        return read_conversation(self.client, post_id)
+
+    @staticmethod
+    def _bounded_read(result: dict, count: int, coverage: str) -> dict:
         if not result["ok"]:
             return result
+        items = result["data"]["items"]
         return {
             "ok": True,
             "data": {
-                "items": [normalize_post(i) for i in _build_thread(result["data"].get("items", []))]
+                **result["data"],
+                "items": [normalize_post(i) for i in items[:count]],
+                "returned_count": len(items[:count]),
+                "truncated": len(items) > count,
+                "coverage": coverage,
+                "coverage_complete": False,
+                "scope": "account",
             },
         }
 
-    def own_posts(self, count: int = 10, drafts: bool = False) -> dict:
+    def discover(self, count: int = 20, collection: str | None = None) -> dict:
+        from mb.discover_collections import get_discover_collection
+
+        if collection and not get_discover_collection(collection):
+            return failure("Unknown discover collection; read mb://discover-collections")
+        return self._bounded_read(
+            self.client.get_discover(collection, count=count + 1), count, "recent-discover-window"
+        )
+
+    def profile_get(self, username: str, count: int = 10) -> dict:
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", username):
+            return failure("Use a Micro.blog username")
+        return self._bounded_read(
+            self.client.get_user(username, count=count + 1), count, "recent-user-posts"
+        )
+
+    def replies(self, count: int = 10) -> dict:
+        return self._bounded_read(
+            self.client.get_replies(count=count + 1), count, "recent-account-replies"
+        )
+
+    def blog_search(self, query: str, count: int = 20, category: str | None = None) -> dict:
+        if not query.strip():
+            return failure("Search query is empty")
+        identity = self.identity()
+        if not identity["ok"]:
+            return identity
+        result = self.client.search_blog(identity["data"]["username"], query, category)
+        result = self._bounded_read(result, count, "server-filtered-source-window")
+        if result["ok"]:
+            result["data"]["scope"] = "selected-blog"
+            result["data"]["identity"] = identity["data"]
+        return result
+
+    def blog_categories(self) -> dict:
+        identity = self.identity()
+        if not identity["ok"]:
+            return identity
+        result = self.client.micropub_get_categories()
+        if result["ok"]:
+            result["data"].update(scope="selected-blog", identity=identity["data"])
+        return result
+
+    def own_posts(self, count: int = 10, drafts: bool = False, category: str | None = None) -> dict:
         identity = self.identity()
         if not identity["ok"]:
             return identity
@@ -443,12 +552,16 @@ class MicroblogService:
         items = self.client._normalize_micropub_items(
             result["data"].get("items", []), owner=identity["data"]["username"]
         )
+        if category:
+            items = [i for i in items if category in i.get("tags", [])]
         return {
             "ok": True,
             "data": {
                 "items": [normalize_post(i) for i in items[:count]],
                 "truncated": len(items) > count,
                 "coverage": "recent-source-window",
+                "coverage_complete": False,
+                "scope": "selected-blog",
                 "identity": identity["data"],
             },
         }
@@ -472,7 +585,7 @@ class MicroblogService:
         resolved = self.resolve_url(identifier)
         if resolved["ok"] and not self._owns_url(resolved["data"]["url"]):
             return failure("Post must belong to this server's selected blog", 403)
-        return self.client.micropub_get(resolved["data"]["url"]) if resolved["ok"] else resolved
+        return read_source(self.client, resolved["data"]["url"]) if resolved["ok"] else resolved
 
     def preview(self, **arguments) -> dict:
         identity = self.identity()
@@ -484,9 +597,36 @@ class MicroblogService:
             result["data"]["dry_run"] = True
         return result
 
+    def media_preview(self, file: str, alt: str) -> dict:
+        from mb.media import ImageInputError, load_image
+
+        if not alt.strip():
+            return failure("Provide descriptive alt text for the image")
+        identity = self.identity()
+        if not identity["ok"]:
+            return identity
+        try:
+            metadata, _ = load_image(self.media_root, file)
+        except ImageInputError as exc:
+            return failure(str(exc))
+        return {
+            "ok": True,
+            "data": {**metadata, "alt": alt, "identity": identity["data"], "dry_run": True},
+        }
+
     def write(self, action: str, operation_id: str, arguments: dict) -> dict:
         if self.read_only:
             return failure("Server is read-only", 403, outcome="not_applied")
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", operation_id):
+            return failure("Use a stable operation ID of 1-128 letters, digits or _.:-")
+        if action == "media_upload" and not re.fullmatch(
+            r"[a-f0-9]{64}", arguments.get("sha256", "")
+        ):
+            return failure("Upload requires the sha256 from a reviewed media_preview")
+        if action == "post_publish" and not re.fullmatch(
+            r"[a-f0-9]{64}", arguments.get("source_hash", "")
+        ):
+            return failure("Publish requires the source_hash from a reviewed post_get")
         identity = self.identity()
         if not identity["ok"]:
             return identity
@@ -494,6 +634,7 @@ class MicroblogService:
             preview = preview_post(**arguments)
             if not preview["ok"]:
                 return preview
+            arguments = {k: v for k, v in preview["data"].items() if k != "char_count"}
         if action == "post_edit" and not any(
             arguments.get(k) is not None for k in ("content", "title", "categories")
         ):
@@ -508,8 +649,23 @@ class MicroblogService:
             return failure(str(exc), 409)
         if previous is not None:
             return previous
+        media = None
+        if action == "media_upload":
+            from mb.media import ImageInputError, load_image
+
+            if not arguments["alt"].strip():
+                return failure("Provide descriptive alt text for the image")
+            try:
+                metadata, content = load_image(self.media_root, arguments["file"])
+            except ImageInputError as exc:
+                return failure(str(exc), outcome="not_applied")
+            if metadata["sha256"] != arguments["sha256"]:
+                return failure(
+                    "Image changed since preview; review it again", 409, outcome="not_applied"
+                )
+            media = metadata, content
         target = None
-        if action in {"post_edit", "post_delete"}:
+        if action in {"post_edit", "post_delete", "post_publish"}:
             resolved = self.resolve_url(arguments["identifier"])
             if not resolved["ok"]:
                 return resolved
@@ -519,6 +675,15 @@ class MicroblogService:
             source = self.client.micropub_get(target)
             if not source["ok"]:
                 return source
+            if action == "post_publish":
+                if source["data"].get("properties", {}).get("post-status") != ["draft"]:
+                    return failure("Post is not an existing draft", 409, outcome="not_applied")
+                if source_hash(source["data"]) != arguments["source_hash"]:
+                    return failure(
+                        "Draft changed since review; read and approve its current source",
+                        409,
+                        outcome="not_applied",
+                    )
         try:
             previous = self.state.claim(scope, operation_id, fingerprint)
         except StateConflict as exc:
@@ -526,7 +691,23 @@ class MicroblogService:
         if previous is not None:
             return previous
         try:
-            if action == "post_create":
+            if action == "media_upload":
+                assert media is not None
+                metadata, content = media
+                result = self.client.micropub_upload_bytes(
+                    metadata["filename"], content, content_type=metadata["mime_type"]
+                )
+                if result["ok"]:
+                    result = {
+                        **result,
+                        "data": {
+                            **result["data"],
+                            **metadata,
+                            "alt": arguments["alt"],
+                            "identity": identity["data"],
+                        },
+                    }
+            elif action == "post_create":
                 result = create_post(self.client, **arguments)
             elif action == "post_reply":
                 result = reply_post(self.client, int(arguments["post_id"]), arguments["content"])
@@ -535,6 +716,9 @@ class MicroblogService:
                 result = self.client.micropub_update(
                     target, **{k: v for k, v in arguments.items() if k != "identifier"}
                 )
+            elif action == "post_publish":
+                assert target is not None
+                result = self.client.micropub_publish(target)
             elif action == "post_delete":
                 assert target is not None
                 result = self.client.micropub_delete(target)
@@ -549,6 +733,8 @@ class MicroblogService:
             return failure(
                 "write_outcome_unknown", 409, outcome="unknown", operation_id=operation_id
             )
+        if result["ok"] and target is not None:
+            result = {**result, "data": {**result.get("data", {}), "url": target}}
         result = {
             **result,
             "operation_id": operation_id,
@@ -575,11 +761,13 @@ class MicroblogService:
         stored["data"] = {
             k: str(v)
             for k, v in result.get("data", {}).items()
-            if k in {"url", "id"}
+            if k in {"url", "id", "sha256", "upload_sha256", "mime_type", "upload_status"}
             and isinstance(v, (str, int))
             and not isinstance(v, bool)
             and not (isinstance(token, str) and token and token in str(v))
         }
+        if result.get("data", {}).get("processing_pending") is not None:
+            stored["data"]["processing_pending"] = result["data"]["processing_pending"]
         self.state.finish(scope, operation_id, stored)
         return result
 

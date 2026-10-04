@@ -1364,7 +1364,9 @@ class TestTopLevelPipelineAliases:
 class TestUpload:
     def test_upload_local_file(self, tmp_path):
         photo = tmp_path / "otter.jpg"
-        photo.write_bytes(b"fake-image")
+        from PIL import Image
+
+        Image.new("RGB", (2, 2), "blue").save(photo)
 
         transport = _mock_transport()
         patches = _patch_config()
@@ -1390,7 +1392,7 @@ class TestUpload:
             patch("mb.api.MicroblogClient.__init__", _make_mock_init(transport)),
             patch(
                 "mb.commands.upload._download_image",
-                return_value=("otter.jpg", b"fake-image", "image/jpeg"),
+                return_value=("otter.jpg", tiny_jpeg(), "image/jpeg"),
             ),
         ):
             result = runner.invoke(
@@ -1400,3 +1402,13 @@ class TestUpload:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["data"]["source"] == "https://example.com/otter.jpg"
+
+
+def tiny_jpeg():
+    import io
+
+    from PIL import Image
+
+    stream = io.BytesIO()
+    Image.new("RGB", (2, 2), "blue").save(stream, format="JPEG")
+    return stream.getvalue()

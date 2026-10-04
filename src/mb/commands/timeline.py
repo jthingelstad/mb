@@ -58,6 +58,7 @@ def discover(
     list_collections: bool = typer.Option(
         False, "--list", help="List curated discover collections"
     ),
+    count: int = typer.Option(20, "--count", "-n", min=1, max=50),
 ):
     """Show discover timeline."""
     fmt = get_format(ctx)
@@ -85,8 +86,9 @@ def discover(
             fmt,
         )
         raise SystemExit(1)
-    client = get_client(ctx)
-    result = client.get_discover(collection=collection)
+    from mb.commands import get_service
+
+    result = get_service(ctx).discover(count=count, collection=collection)
     if result["ok"]:
         add_content_text(result["data"])
     output_or_exit(result, fmt)

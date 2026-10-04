@@ -8,7 +8,7 @@ from pathlib import Path
 wheel = next(Path("dist").glob("mb-*.whl"))
 source = next(Path("dist").glob("mb-*.tar.gz"))
 with zipfile.ZipFile(wheel) as archive:
-    assert "mb/guidance/mcp.md" in archive.namelist()
+    assert {"mb/guidance/mcp.md", "mb/media.py", "mb/commands/media.py"} <= set(archive.namelist())
     metadata = BytesParser().parsebytes(
         archive.read(next(n for n in archive.namelist() if n.endswith("/METADATA")))
     )
@@ -21,6 +21,9 @@ with tarfile.open(source) as archive:
         "tests/conftest.py",
         "tests/mcp_fixture.py",
         "docs/mcp.md",
+        "docs/content-index-plan.md",
+        "docs/homebrew-release-plan.md",
+        "tests/test_bounded_capabilities.py",
         "skills/mb-mcp/SKILL.md",
         "examples/codex-mcp.toml",
         "examples/openclaw-mcp.json",

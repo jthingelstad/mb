@@ -12,6 +12,7 @@ class MicroblogClient:
     def __init__(self, token: str, base_url: str = DEFAULT_BASE_URL):
         self.token = token
         self.base_url = base_url.rstrip("/")
+        self.media_endpoint = "/micropub/media"
         self.default_destination: str | None = None
         self.username: str | None = None
         self._client = httpx.Client(
@@ -134,19 +135,38 @@ class MicroblogClient:
         resp = self._request("GET", "/posts/photos")
         return self._handle_feed_response(resp)
 
-    def get_discover(self, collection: str | None = None) -> dict:
+    def get_discover(self, collection: str | None = None, count: int = 20) -> dict:
         if collection:
-            resp = self._request("GET", f"/posts/discover/{collection}")
+            resp = self._request("GET", f"/posts/discover/{collection}", params={"count": count})
         else:
-            resp = self._request("GET", "/posts/discover")
+            resp = self._request("GET", "/posts/discover", params={"count": count})
         return self._handle_feed_response(resp)
 
     def get_conversation(self, post_id: int) -> dict:
         resp = self._request("GET", "/posts/conversation", params={"id": post_id})
         return self._handle_feed_response(resp)
 
-    def get_user(self, username: str) -> dict:
-        resp = self._request("GET", f"/posts/{username}")
+    def get_url_conversation(self, url: str) -> dict:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username:
+            return {"ok": False, "error": "Use a full public post URL", "code": 400}
+        resp = self._request(
+            "GET",
+            "/conversation.js",
+            params={"url": url, "format": "jsonfeed"},
+            headers={"Accept": "application/json"},
+        )
+        # Official Inkwell treats 404 as an unresolved URL, not proof of no replies.
+        if resp.status_code == 404:
+            return {"ok": True, "data": {"items": [], "not_found": True}}
+        return self._handle_feed_response(resp)
+
+    def get_replies(self, count: int = 20) -> dict:
+        resp = self._request("GET", "/posts/replies", params={"count": count})
+        return self._handle_feed_response(resp)
+
+    def get_user(self, username: str, count: int = 20) -> dict:
+        resp = self._request("GET", f"/posts/{username}", params={"count": count})
         return self._handle_feed_response(resp)
 
     def get_following(self, username: str) -> dict:
@@ -169,9 +189,11 @@ class MicroblogClient:
         resp = self._request("POST", "/users/unfollow", data={"username": username})
         return self._handle_response(resp)
 
-    def mute(self, value: str) -> dict:
+    def mute(self, value: str, *, keyword: bool = False) -> dict:
         """Mute a username or keyword."""
-        resp = self._request("POST", "/users/mute", data={"username": value})
+        resp = self._request(
+            "POST", "/users/mute", data={"keyword" if keyword else "username": value}
+        )
         return self._handle_response(resp)
 
     def get_muting(self) -> dict:
@@ -179,7 +201,7 @@ class MicroblogClient:
         return self._handle_response(resp)
 
     def unmute(self, mute_id: int) -> dict:
-        resp = self._request("POST", "/users/unmute", data={"id": mute_id})
+        resp = self._request("DELETE", f"/users/muting/{mute_id}")
         return self._handle_response(resp)
 
     def block(self, username: str) -> dict:
@@ -191,7 +213,7 @@ class MicroblogClient:
         return self._handle_response(resp)
 
     def unblock(self, block_id: int) -> dict:
-        resp = self._request("POST", "/users/unblock", data={"id": block_id})
+        resp = self._request("DELETE", f"/users/blocking/{block_id}")
         return self._handle_response(resp)
 
     def check_timeline(self, since_id: int) -> dict:
@@ -216,27 +238,23 @@ class MicroblogClient:
         return self._handle_response(resp)
 
     def search_blog(self, username: str, query: str, category: str | None = None) -> dict:
-        """Search posts. Uses client-side search for non-default destinations."""
-        if self.default_destination:
-            result = self.micropub_list()
-            if not result["ok"]:
-                return result
-            items = result["data"].get("items", [])
-            normalized = self._normalize_micropub_items(items, owner=username)
-            q = query.lower()
-            matched = [
-                i
-                for i in normalized
-                if q in (i.get("content_html") or "").lower() or q in (i.get("title") or "").lower()
-            ]
-            if category:
-                matched = [i for i in matched if category in i.get("tags", [])]
-            return {"ok": True, "data": {"items": matched}}
-        params: dict = {"search": query}
+        """Server-side search of selected blog source, as used by the official client."""
+        if not self.default_destination:
+            return {"ok": False, "error": "Resolve a selected blog before searching", "code": 400}
+        result = self.micropub_list(query=query)
+        if not result["ok"]:
+            return result
+        items = self._normalize_micropub_items(result["data"]["items"], owner=username)
         if category:
-            params["category"] = category
-        resp = self._request("GET", f"/posts/{username}", params=params)
-        return self._handle_response(resp)
+            items = [i for i in items if category in i.get("tags", [])]
+        return {
+            "ok": True,
+            "data": {
+                "items": items,
+                "coverage": "server-filtered-source-window",
+                "coverage_complete": False,
+            },
+        }
 
     @staticmethod
     def _normalize_micropub_items(items: list, owner: str | None = None) -> list:
@@ -286,6 +304,7 @@ class MicroblogClient:
         draft: bool = False,
         reply_to: str | None = None,
         photo_url: str | None = None,
+        photo_alt: str | None = None,
         categories: list[str] | None = None,
         mp_destination: str | None = None,
     ) -> dict:
@@ -302,6 +321,8 @@ class MicroblogClient:
             data["in-reply-to"] = reply_to
         if photo_url:
             data["photo"] = photo_url
+            if photo_alt is not None:
+                data["mp-photo-alt"] = photo_alt
         if categories:
             data["category[]"] = categories
         destination = mp_destination or self.default_destination
@@ -342,6 +363,13 @@ class MicroblogClient:
         resp = self._request("POST", "/micropub", json=data)
         return self._handle_micropub_response(resp)
 
+    def micropub_publish(self, url: str) -> dict:
+        """Publish the existing draft without replacing its reviewed content."""
+        data: dict = {"action": "update", "url": url, "replace": {"post-status": ["published"]}}
+        if self.default_destination:
+            data["mp-destination"] = self.default_destination
+        return self._handle_micropub_response(self._request("POST", "/micropub", json=data))
+
     def micropub_delete(self, url: str) -> dict:
         data: dict = {
             "action": "delete",
@@ -366,8 +394,10 @@ class MicroblogClient:
             return {"ok": False, "error": "invalid_source_response", "code": 502}
         return result
 
-    def micropub_list(self, drafts: bool = False) -> dict:
+    def micropub_list(self, drafts: bool = False, query: str | None = None) -> dict:
         params: dict = {"q": "source"}
+        if query is not None:
+            params["filter"] = query
         if drafts:
             params["post-status"] = "draft"
         if self.default_destination:
@@ -397,21 +427,40 @@ class MicroblogClient:
         data = {}
         if alt:
             data["mp-photo-alt"] = alt
-        resp = self._request("POST", "/micropub/media", files=files, data=data)
-        if resp.status_code in (201, 202):
-            location = resp.headers.get("Location", "")
-            return {"ok": True, "data": {"url": location}}
-        return self._handle_response(resp)
+        if self.default_destination:
+            data["mp-destination"] = self.default_destination
+        resp = self._request(
+            "POST", getattr(self, "media_endpoint", "/micropub/media"), files=files, data=data
+        )
+        result = self._handle_micropub_response(resp, require_location=True)
+        if result["ok"] and resp.status_code not in {201, 202}:
+            return {
+                "ok": False,
+                "error": "unexpected_upload_status",
+                "code": 502,
+                "outcome": "unknown",
+            }
+        if result["ok"]:
+            result["data"].pop("id", None)
+            result["data"].pop("preview", None)
+            result["data"].update(
+                upload_status="accepted" if resp.status_code == 202 else "created",
+                processing_pending=resp.status_code == 202,
+            )
+        return result
 
     def micropub_upload_photo(self, filepath: str, alt: str | None = None) -> dict:
         """Upload a photo to the media endpoint, return its URL."""
+        from mb.media import ImageInputError, load_image
+
+        path = Path(filepath).absolute()
         try:
-            content = Path(filepath).read_bytes()
-        except FileNotFoundError:
-            return {"ok": False, "error": f"File not found: {filepath}", "code": 400}
-        except OSError as e:
-            return {"ok": False, "error": f"Cannot read file: {filepath} ({e})", "code": 400}
-        return self.micropub_upload_bytes(filepath.split("/")[-1], content, alt=alt)
+            metadata, content = load_image(path.parent, path.name)
+        except ImageInputError as exc:
+            return {"ok": False, "error": str(exc), "code": 400}
+        return self.micropub_upload_bytes(
+            metadata["filename"], content, alt=alt, content_type=metadata["mime_type"]
+        )
 
     def _handle_micropub_response(
         self, resp: httpx.Response, *, require_location: bool = False

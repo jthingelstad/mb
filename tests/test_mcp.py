@@ -44,7 +44,7 @@ async def test_stdio_complete_agent_session(tmp_path):
             initialization = await session.initialize()
             assert initialization.server_info.name == "mb"
             tools = (await session.list_tools()).tools
-            assert len(tools) == 15
+            assert len(tools) == 23
             assert all(tool.output_schema for tool in tools)
             delete = next(tool for tool in tools if tool.name == "post_delete")
             assert delete.annotations.destructive_hint is True
@@ -242,10 +242,71 @@ async def test_missing_auth_allows_discovery_and_returns_actionable_error(tmp_pa
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            assert len((await session.list_tools()).tools) == 15
+            assert len((await session.list_tools()).tools) == 23
             assert (await session.read_resource("mb://guide")).contents
             result = await session.call_tool("identity", {})
             assert result.is_error
             assert result.structured_content["code"] == 401
             assert "host environment" in result.structured_content["error"]
             assert not (tmp_path / "state.sqlite").exists()
+
+
+@pytest.mark.anyio
+async def test_stdio_local_image_draft_workflow_and_new_reads(tmp_path):
+    from PIL import Image
+
+    Image.new("RGB", (3, 4), "blue").save(tmp_path / "image.png")
+    async with stdio_client(parameters(tmp_path, "--media-root", str(tmp_path))) as (read, write):
+        async with ClientSession(read, write, read_timeout_seconds=10) as session:
+            await session.initialize()
+
+            async def call(name, arguments):
+                result = await session.call_tool(name, arguments)
+                assert not result.is_error, result
+                return result.structured_content
+
+            for name, args in [
+                ("discover", {"count": 1}),
+                ("profile_get", {"username": "agent", "count": 1}),
+                ("replies", {"count": 1}),
+                ("conversation", {"post_id": "https://external.example/post"}),
+            ]:
+                assert (await call(name, args))["data"]["scope"] == "account"
+            image = (await call("media_preview", {"file": "image.png", "alt": "Blue rectangle"}))[
+                "data"
+            ]
+            assert image["width"] == 3 and not (tmp_path / "state.sqlite").exists()
+            args = {
+                "file": "image.png",
+                "alt": image["alt"],
+                "sha256": image["sha256"],
+                "operation_id": "sdk-image",
+            }
+            uploaded = await call("media_upload", args)
+            assert uploaded["data"]["processing_pending"]
+            assert (await call("media_upload", args))["data"]["url"] == uploaded["data"]["url"]
+            payload = {
+                "content": "Image draft",
+                "photo_url": uploaded["data"]["url"],
+                "photo_alt": image["alt"],
+                "draft": True,
+            }
+            assert (await call("post_preview", payload))["data"]["photo_alt"] == image["alt"]
+            created = await call("post_create", {**payload, "operation_id": "sdk-draft"})
+            source = (await call("post_get", {"identifier": created["data"]["url"]}))["data"]
+            assert source["properties"]["mp-photo-alt"] == [image["alt"]]
+            publish = {
+                "identifier": created["data"]["url"],
+                "source_hash": source["source_hash"],
+                "operation_id": "sdk-publish",
+            }
+            assert (await call("post_publish", publish))["outcome"] == "applied"
+            assert (await call("post_publish", publish))["outcome"] == "applied"
+            assert (await call("blog_search", {"query": "Image", "count": 1}))["data"][
+                "scope"
+            ] == "selected-blog"
+            assert (await call("blog_categories", {}))["data"]["categories"] == ["photos"]
+            result = await session.call_tool(
+                "media_preview", {"file": "../secret.png", "alt": "Bad"}
+            )
+            assert result.is_error

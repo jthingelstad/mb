@@ -285,10 +285,10 @@ def mock_client():
         ("POST", "/users/unfollow"): (200, {}, {}),
         ("POST", "/users/mute"): (200, {}, {}),
         ("GET", "/users/muting"): (200, [{"id": 1, "username": "spammer"}], {}),
-        ("POST", "/users/unmute"): (200, {}, {}),
+        ("DELETE", "/users/muting/1"): (200, {}, {}),
         ("POST", "/users/block"): (200, {}, {}),
         ("GET", "/users/blocking"): (200, [{"id": 1, "username": "troll"}], {}),
-        ("POST", "/users/unblock"): (200, {}, {}),
+        ("DELETE", "/users/blocking/1"): (200, {}, {}),
         ("POST", "/micropub"): (
             201,
             "",

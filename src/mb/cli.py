@@ -8,7 +8,7 @@ import typer.core
 
 from mb import config
 from mb.api import MicroblogClient
-from mb.commands import blog, checkpoint, conversation, lookup, post, timeline, user
+from mb.commands import blog, checkpoint, conversation, lookup, media, post, timeline, user
 from mb.commands import catchup as catchup_cmd
 from mb.commands import guide as guide_cmd
 from mb.commands import heartbeat as heartbeat_cmd
@@ -20,7 +20,16 @@ from mb.formatters import output
 class _FlexibleGroup(typer.core.TyperGroup):
     """Group that allows global options (-p, -f, --human, -b) after the subcommand."""
 
-    _VALUED_OPTS = {"-p", "--profile", "-f", "--format", "-b", "--blog"}
+    _VALUED_OPTS = {
+        "-p",
+        "--profile",
+        "-f",
+        "--format",
+        "-b",
+        "--blog",
+        "--state-file",
+        "--media-root",
+    }
     _FLAG_OPTS = {"--human"}
 
     def parse_args(self, ctx, args):
@@ -44,6 +53,7 @@ class _FlexibleGroup(typer.core.TyperGroup):
 app = typer.Typer(
     cls=_FlexibleGroup, add_completion=False, no_args_is_help=True, rich_markup_mode=None
 )
+app.add_typer(media.app, name="media", help="Preview and upload reviewed local images")
 app.add_typer(post.app, name="post", help="Publishing commands")
 app.add_typer(timeline.app, name="timeline", help="Reading/discovery commands")
 app.add_typer(user.app, name="user", help="Social graph commands")
@@ -93,6 +103,12 @@ def main(
     human: bool = typer.Option(False, "--human", help="Shortcut for --format human"),
     profile: str = typer.Option("default", "--profile", "-p", help="Config profile to use"),
     blog_name: str = typer.Option(None, "--blog", "-b", help="Blog destination (name or URL)"),
+    state_file: str | None = typer.Option(
+        None, "--state-file", help="Shared local operation receipts"
+    ),
+    media_root: str | None = typer.Option(
+        None, "--media-root", help="Explicit allowed local image directory"
+    ),
 ):
     """mb — micro.blog CLI for agents."""
     ctx.ensure_object(dict)
@@ -108,6 +124,8 @@ def main(
                 fmt = env_fmt
     ctx.obj["format"] = fmt
     ctx.obj["profile"] = profile
+    ctx.obj["state_file"] = state_file
+    ctx.obj["media_root"] = media_root
     if blog_name:
         ctx.obj["blog"] = blog_name
 
@@ -234,9 +252,10 @@ def discover_alias(
     list_collections: bool = typer.Option(
         False, "--list", help="List curated discover collections"
     ),
+    count: int = typer.Option(20, "--count", "-n", min=1, max=50),
 ):
     """Show posts from a Micro.blog Discover collection."""
-    timeline.discover(ctx, collection=collection, list_collections=list_collections)
+    timeline.discover(ctx, collection=collection, list_collections=list_collections, count=count)
 
 
 @app.command()
@@ -385,9 +404,6 @@ def mcp_command(
     read_only: bool = typer.Option(
         False, "--read-only", help="Disable remote writes and checkpoint acknowledgement"
     ),
-    state_file: str | None = typer.Option(
-        None, "--state-file", help="Local SQLite cursor and operation-receipt file"
-    ),
 ):
     """Serve optional MCP tools over local stdio. Install mb[mcp] first."""
     from pathlib import Path
@@ -402,6 +418,7 @@ def mcp_command(
         raise typer.Exit(1) from None
     profile = get_profile(ctx)
     blog_dest = ctx.obj.get("blog")
+    state_file = ctx.obj.get("state_file")
     state_path = Path(state_file) if state_file else config.CONFIG_DIR / "mcp-state.sqlite3"
 
     def service_factory():
@@ -415,6 +432,15 @@ def mcp_command(
             consumer,
             state_path,
             read_only,
+            media_root=Path(ctx.obj["media_root"]) if ctx.obj.get("media_root") else None,
         )
 
     anyio.run(serve, service_factory)
+
+
+@app.command("operation-status")
+def operation_status(ctx: typer.Context, operation_id: str = typer.Argument(...)):
+    """Read the shared CLI/MCP durable write receipt."""
+    from mb.commands import get_service, output_or_exit
+
+    output_or_exit(get_service(ctx).operation_status(operation_id), get_format(ctx))

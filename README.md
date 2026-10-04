@@ -4,7 +4,7 @@ A bridge to [micro.blog](https://micro.blog), designed for agents: an agent-firs
 
 `mb` prioritizes agent-friendly output, composable commands, and zero interactive prompts, making it a good fit for AI agents and scripts.
 
-The 2.0 release candidate adds typed tools, explicit consumer-scoped acknowledgement and durable write receipts. See [MCP setup and contracts](docs/mcp.md).
+The 2.0 release candidate adds 23 typed tools, explicit acknowledgement, shared write receipts, reviewed local images, guarded draft publishing and bounded discovery/search reads. See [MCP setup and contracts](docs/mcp.md).
 
 ## Install
 
@@ -330,7 +330,7 @@ mb discover --list
 
 # Upload an image first, then attach it to a post
 img=$(mb upload ./otter.jpg --format json | jq -r '.data.url')
-mb post new "An otter for today" --photo-url "$img"
+mb post new "An otter for today" --photo-url "$img" --alt "An otter beside the water"
 
 # Short-form publishing for conversational micro.blog posts
 mb post short "A small thought for today."
@@ -339,3 +339,5 @@ mb post short "A small thought for today."
 ## License
 
 See [LICENSE](LICENSE) for details.
+
+Proposed next stages: [full-blog inventory and category maintenance](docs/content-index-plan.md) and [Homebrew distribution](docs/homebrew-release-plan.md).

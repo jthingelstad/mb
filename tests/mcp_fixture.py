@@ -24,6 +24,14 @@ posts = {}
 def response(request):
     if request.url.path == "/account/verify":
         return httpx.Response(200, json={"username": "agent", "default_site": "agent.example"})
+    if request.url.path == "/micropub/media":
+        return httpx.Response(202, headers={"Location": "https://agent.example/uploads/image.png"})
+    if request.url.path == "/conversation.js":
+        return httpx.Response(200, json={"items": [{"id": 10, "content_html": "Webmention reply"}]})
+    if request.url.path in {"/posts/discover", "/posts/agent", "/posts/replies"}:
+        return httpx.Response(
+            200, json={"title": "Agent", "items": [{"id": 10, "content_html": "Account post"}]}
+        )
     if request.url.path == "/posts/all":
         params = request.url.params
         since = int(params.get("since_id", "0"))
@@ -53,6 +61,8 @@ def response(request):
         return httpx.Response(200, json={"id": 9})
     if request.method == "GET":
         query = request.url.params.get("q")
+        if query == "category":
+            return httpx.Response(200, json={"categories": ["photos"]})
         if query == "config":
             return httpx.Response(200, json={"destination": [{"uid": BLOG}]})
         if "url" in request.url.params:
@@ -76,7 +86,16 @@ def response(request):
         url = BLOG + "post"
         posts[url] = {
             "type": ["h-entry"],
-            "properties": {"url": [url], "content": payload["content"]},
+            "properties": {
+                "url": [url],
+                "content": payload["content"],
+                "post-status": payload.get("post-status", ["published"]),
+                **(
+                    {"photo": payload["photo"], "mp-photo-alt": payload["mp-photo-alt"]}
+                    if "photo" in payload
+                    else {}
+                ),
+            },
         }
         return httpx.Response(201, headers={"Location": url})
     raise AssertionError("Unexpected request")

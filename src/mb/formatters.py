@@ -98,9 +98,24 @@ def output_human(data: dict) -> None:
     console = Console()
     if not data.get("ok"):
         console.print(f"[red]Error:[/red] {data.get('error', 'Unknown error')}")
+        if data.get("outcome"):
+            console.print(f"outcome={data['outcome']}")
+        if data.get("operation_id"):
+            console.print(f"operation_id={data['operation_id']}")
         return
 
     payload = data.get("data", {})
+    if data.get("operation_id"):
+        print(f"operation_id={data['operation_id']} outcome={data.get('outcome', 'unknown')}")
+    if isinstance(payload, dict) and payload.get("coverage"):
+        detail = f"coverage={payload['coverage']}"
+        if "coverage_complete" in payload:
+            detail += f" complete={str(payload['coverage_complete']).lower()}"
+        if "truncated" in payload:
+            detail += f" truncated={str(payload['truncated']).lower()}"
+        if payload.get("identity", {}).get("blog"):
+            detail += f" blog={payload['identity']['blog']}"
+        print(detail)
 
     if isinstance(payload, dict) and payload.get("kind") == "upload":
         console.print(f"[green]Uploaded[/green] {payload.get('url', '')}")
@@ -357,9 +372,22 @@ def output_agent(data: dict) -> None:
             print(f"retry_after={data['retry_after']}")
         if data.get("outcome"):
             print(f"outcome={data['outcome']}")
+        if data.get("operation_id"):
+            print(f"operation_id={data['operation_id']}")
         return
 
     payload = data.get("data", {})
+    if data.get("operation_id"):
+        print(f"operation_id={data['operation_id']} outcome={data.get('outcome', 'unknown')}")
+    if isinstance(payload, dict) and payload.get("coverage"):
+        detail = f"coverage={payload['coverage']}"
+        if "coverage_complete" in payload:
+            detail += f" complete={str(payload['coverage_complete']).lower()}"
+        if "truncated" in payload:
+            detail += f" truncated={str(payload['truncated']).lower()}"
+        if payload.get("identity", {}).get("blog"):
+            detail += f" blog={payload['identity']['blog']}"
+        print(detail)
 
     if isinstance(payload, dict) and payload.get("kind") == "upload":
         line = payload.get("url", "")

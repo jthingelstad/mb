@@ -29,6 +29,7 @@ class TestCategories:
 
 class TestSearch:
     def test_search_blog(self, mock_client):
+        mock_client.default_destination = "https://testuser.micro.blog/"
         result = mock_client.search_blog("testuser", query="hello")
         assert result["ok"] is True
 

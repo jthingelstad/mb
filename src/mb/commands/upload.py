@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import httpx
 import typer
 
-from mb.commands import get_client, get_format, output_or_exit
+from mb.commands import get_client, get_format, get_service, output_or_exit
 
 
 def _download_image(url: str) -> tuple[str, bytes, str | None] | dict:
@@ -45,6 +45,11 @@ def run(
     """Upload a local image file or a remote image URL."""
     client = get_client(ctx)
     fmt = get_format(ctx)
+    identity = get_service(ctx, client).identity()
+    if not identity["ok"]:
+        output_or_exit(identity, fmt)
+        return
+    client.default_destination = identity["data"]["blog"]
 
     if source.startswith("http://") or source.startswith("https://"):
         downloaded = _download_image(source)
@@ -52,7 +57,16 @@ def run(
             output_or_exit(downloaded, fmt)
             return
         filename, content, content_type = downloaded
-        result = client.micropub_upload_bytes(filename, content, alt=alt, content_type=content_type)
+        from mb.media import ImageInputError, normalize_image
+
+        try:
+            metadata, content = normalize_image(content, filename)
+        except ImageInputError as exc:
+            output_or_exit({"ok": False, "error": str(exc), "code": 400}, fmt)
+            return
+        result = client.micropub_upload_bytes(
+            metadata["filename"], content, alt=alt, content_type=metadata["mime_type"]
+        )
     else:
         result = client.micropub_upload_photo(source, alt=alt)
 

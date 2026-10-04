@@ -150,3 +150,9 @@ mb inbox | mb lookup posts --conversation -
 mb follow <username|->
 mb unfollow <username|->
 ```
+
+## Candidate 2.0 additions
+
+Use `mb media preview FILE --alt TEXT` under an explicitly selected `--media-root DIR` to review a supported static local image, its normalized payload/hash and verified destination. After authorization, `mb media upload FILE --alt TEXT --sha256 HASH --operation-id ID` returns the image reference; HTTP 202 means accepted but possibly still processing. Attach that URL with `mb post new ... --photo-url URL --alt TEXT --operation-id DIFFERENT_ID`. Preserve IDs/arguments across retries and inspect `mb operation-status ID` after uncertainty. Never repeat an upload merely because creating a post failed.
+
+Post create/reply/edit/delete can opt into shared CLI/MCP receipts with `--operation-id` and `--state-file`. Existing-draft publish requires `mb post get URL --format json`, review of its source, then `mb post publish URL --source-hash HASH --operation-id ID`; no automatic live verification writes. `mb post replies`, `mb user show --count N`, `mb discover --count N` and `mb conversation URL` are account reads. `mb blog posts/search/categories` are selected-blog source reads with bounded coverage, not a complete category audit. `mb user mute WORD --keyword` explicitly mutes a keyword.

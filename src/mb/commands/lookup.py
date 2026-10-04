@@ -193,6 +193,23 @@ def _fetch_post_lookup(
     """Fetch lookup data for one post."""
     client = MicroblogClient(token=token, base_url=base_url)
     try:
+        if include_conversation and identifier.startswith(("http://", "https://")):
+            from mb.services import read_conversation
+
+            conversation = read_conversation(client, identifier)
+            if not conversation["ok"]:
+                return {**conversation, "identifier": identifier}
+            items = conversation["data"]["items"]
+            return {
+                "ok": True,
+                "identifier": identifier,
+                "url": identifier,
+                "conversation_items": items,
+                "conversation_count": len(items),
+                "coverage": conversation["data"]["coverage"],
+                "not_found": conversation["data"].get("not_found", False),
+                **({"content_text": "", "post_unavailable": True} if include_post else {}),
+            }
         record = _lookup_post_record(client, identifier)
     finally:
         client.close()
@@ -390,6 +407,9 @@ def posts(
                 "date_published": item.get("date_published"),
                 "author_username": item.get("author_username"),
             }
+            for key in ("coverage", "not_found", "post_unavailable"):
+                if key in item:
+                    entry[key] = item[key]
             if "content_text" in item:
                 entry["content_text"] = item.get("content_text")
             if "conversation_items" in item:

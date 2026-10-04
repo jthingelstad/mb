@@ -127,3 +127,23 @@ def extract_post_id(value: str) -> int | None:
         if last.isdigit():
             return int(last)
     return None
+
+
+def get_service(ctx: typer.Context, client=None):
+    from pathlib import Path
+
+    from mb import config
+    from mb.services import MicroblogService
+
+    client = client or get_client(ctx)
+    options = ctx.obj or {}
+    return MicroblogService(
+        client,
+        get_profile(ctx),
+        client.default_destination,
+        "cli",
+        Path(options["state_file"])
+        if options.get("state_file")
+        else config.CONFIG_DIR / "mcp-state.sqlite3",
+        media_root=Path(options["media_root"]) if options.get("media_root") else None,
+    )

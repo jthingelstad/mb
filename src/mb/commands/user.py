@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import typer
 
-from mb.commands import get_client, get_format, get_username, output_or_exit
+from mb.commands import get_client, get_format, get_service, get_username, output_or_exit
 
 app = typer.Typer(no_args_is_help=True, rich_markup_mode=None)
 
@@ -119,9 +119,13 @@ def _run_batch_action(ctx: typer.Context, username: str, action_name: str, actio
 
 
 @app.command()
-def show(ctx: typer.Context, username: str = typer.Argument(..., help="Username to look up")):
+def show(
+    ctx: typer.Context,
+    username: str = typer.Argument(..., help="Username to look up"),
+    count: int = typer.Option(10, "--count", "-n", min=1, max=50),
+):
     """Show user profile."""
-    output_or_exit(get_client(ctx).get_user(username), get_format(ctx))
+    output_or_exit(get_service(ctx).profile_get(username, count=count), get_format(ctx))
 
 
 @app.command()
@@ -167,9 +171,13 @@ def is_following(ctx: typer.Context, username: str = typer.Argument(..., help="U
 
 
 @app.command()
-def mute(ctx: typer.Context, value: str = typer.Argument(..., help="Username or keyword to mute")):
+def mute(
+    ctx: typer.Context,
+    value: str = typer.Argument(..., help="Username or keyword to mute"),
+    keyword: bool = typer.Option(False, "--keyword", help="Mute a keyword instead of a username"),
+):
     """Mute a user or keyword."""
-    output_or_exit(get_client(ctx).mute(value), get_format(ctx))
+    output_or_exit(get_client(ctx).mute(value, keyword=keyword), get_format(ctx))
 
 
 @app.command()

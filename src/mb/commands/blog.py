@@ -2,7 +2,12 @@
 
 import typer
 
-from mb.commands import add_content_text, get_client, get_format, get_username, output_or_exit
+from mb.commands import (
+    add_content_text,
+    get_format,
+    get_service,
+    output_or_exit,
+)
 
 app = typer.Typer(no_args_is_help=True, rich_markup_mode=None)
 
@@ -10,14 +15,12 @@ app = typer.Typer(no_args_is_help=True, rich_markup_mode=None)
 @app.command("posts")
 def posts(
     ctx: typer.Context,
-    count: int = typer.Option(20, "--count", "-n", help="Number of posts"),
+    count: int = typer.Option(20, "--count", "-n", min=1, max=50, help="Number of posts"),
     category: str = typer.Option(None, "--category", "-c", help="Filter by category"),
 ):
     """List your own blog posts."""
     fmt = get_format(ctx)
-    client = get_client(ctx)
-    username = get_username(ctx)
-    result = client.get_blog_posts(username, count=count, category=category)
+    result = get_service(ctx).own_posts(count=count, category=category)
     if result["ok"]:
         add_content_text(result["data"])
     output_or_exit(result, fmt)
@@ -26,19 +29,19 @@ def posts(
 @app.command("categories")
 def categories(ctx: typer.Context):
     """List all categories/tags used on your blog."""
-    output_or_exit(get_client(ctx).micropub_get_categories(), get_format(ctx))
+    output_or_exit(get_service(ctx).blog_categories(), get_format(ctx))
 
 
 @app.command("search")
 def search(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="Search query"),
+    count: int = typer.Option(20, "--count", "-n", min=1, max=50),
+    category: str | None = typer.Option(None, "--category", "-c"),
 ):
     """Search your blog posts."""
     fmt = get_format(ctx)
-    client = get_client(ctx)
-    username = get_username(ctx)
-    result = client.search_blog(username, query=query)
+    result = get_service(ctx).blog_search(query, count=count, category=category)
     if result["ok"]:
         add_content_text(result["data"])
     output_or_exit(result, fmt)

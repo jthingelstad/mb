@@ -10,6 +10,7 @@ from mb.commands import (
     extract_post_id,
     get_client,
     get_format,
+    get_service,
     get_username,
     output_or_exit,
     resolve_post_url,
@@ -97,6 +98,7 @@ def new(
         None, "--category", "-c", help="Categories/tags for the post"
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without posting"),
+    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable write receipt ID"),
 ):
     """Create a new post."""
     from mb.formatters import output
@@ -125,6 +127,20 @@ def new(
         output({"ok": False, "error": str(e), "code": 400}, fmt)
         raise SystemExit(1)
 
+    if operation_id and photo:
+        output(
+            {
+                "ok": False,
+                "error": "Receipt writes require an existing --photo-url; use media preview/upload first",
+                "code": 400,
+            },
+            fmt,
+        )
+        raise SystemExit(1)
+    if alt is not None and not (photo or photo_url):
+        output({"ok": False, "error": "Alt text requires a photo", "code": 400}, fmt)
+        raise SystemExit(1)
+
     if dry_run:
         output(
             {
@@ -135,6 +151,7 @@ def new(
                     "content": content,
                     "draft": draft,
                     "photo": photo or photo_url,
+                    "photo_alt": alt,
                     "categories": category,
                 },
             },
@@ -144,6 +161,11 @@ def new(
 
     # Upload photo if provided
     if photo:
+        identity = get_service(ctx, client).identity()
+        if not identity["ok"]:
+            output_or_exit(identity, fmt)
+            return
+        client.default_destination = identity["data"]["blog"]
         upload = client.micropub_upload_photo(photo, alt=alt)
         if not upload["ok"]:
             output(upload, fmt)
@@ -152,13 +174,18 @@ def new(
 
     from mb.services import create_post
 
-    result = create_post(
-        client,
+    arguments = dict(
         content=content,
         title=title,
         draft=draft,
         photo_url=photo_url,
+        photo_alt=alt,
         categories=category or None,
+    )
+    result = (
+        get_service(ctx).write("post_create", operation_id, arguments)
+        if operation_id
+        else create_post(client, **arguments)
     )
     output_or_exit(result, fmt)
 
@@ -184,6 +211,7 @@ def short(
         False, "--strict-300", help=f"Fail if content exceeds {SHORT_POST_LIMIT} characters"
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without posting"),
+    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable write receipt ID"),
 ):
     """Create a short-form post without a title."""
     from mb.formatters import output
@@ -228,6 +256,20 @@ def short(
             raise SystemExit(1)
         warnings.append(f"content exceeds {SHORT_POST_LIMIT} characters")
 
+    if operation_id and photo:
+        output(
+            {
+                "ok": False,
+                "error": "Receipt writes require an existing --photo-url; use media preview/upload first",
+                "code": 400,
+            },
+            fmt,
+        )
+        raise SystemExit(1)
+    if alt is not None and not (photo or photo_url):
+        output({"ok": False, "error": "Alt text requires a photo", "code": 400}, fmt)
+        raise SystemExit(1)
+
     if dry_run:
         output(
             {
@@ -239,6 +281,7 @@ def short(
                     "char_count": char_count,
                     "draft": draft,
                     "photo": photo or photo_url,
+                    "photo_alt": alt,
                     "categories": category,
                     "warnings": warnings,
                 },
@@ -248,6 +291,11 @@ def short(
         return
 
     if photo:
+        identity = get_service(ctx, client).identity()
+        if not identity["ok"]:
+            output_or_exit(identity, fmt)
+            return
+        client.default_destination = identity["data"]["blog"]
         upload = client.micropub_upload_photo(photo, alt=alt)
         if not upload["ok"]:
             output(upload, fmt)
@@ -256,12 +304,17 @@ def short(
 
     from mb.services import create_post
 
-    result = create_post(
-        client,
+    arguments = dict(
         content=content,
         draft=draft,
         photo_url=photo_url,
+        photo_alt=alt,
         categories=category or None,
+    )
+    result = (
+        get_service(ctx).write("post_create", operation_id, arguments)
+        if operation_id
+        else create_post(client, **arguments)
     )
     if result.get("ok"):
         result["data"]["short"] = True
@@ -282,7 +335,9 @@ def get_post(
     client = get_client(ctx)
 
     url = resolve_post_url(client, post_id, fmt)
-    result = client.micropub_get(url)
+    from mb.services import read_source
+
+    result = read_source(client, url)
     output_or_exit(result, fmt)
 
 
@@ -293,6 +348,7 @@ def edit(
     content: str = typer.Option(None, "--content", help="New content (use '-' for stdin)"),
     title: str = typer.Option(None, "--title", "-t", help="New title"),
     category: list[str] = typer.Option(None, "--category", "-c", help="Replace categories"),
+    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable write receipt ID"),
 ):
     """Edit an existing post."""
     from mb.formatters import output
@@ -314,6 +370,16 @@ def edit(
         )
         raise SystemExit(1)
 
+    if operation_id:
+        output_or_exit(
+            get_service(ctx).write(
+                "post_edit",
+                operation_id,
+                dict(identifier=post_id, content=content, title=title, categories=category),
+            ),
+            fmt,
+        )
+        return
     url = resolve_post_url(client, post_id, fmt)
     result = client.micropub_update(
         url,
@@ -341,6 +407,7 @@ def reply(
     ctx: typer.Context,
     post_id: str = typer.Argument(..., help="Post ID or URL to reply to"),
     content: str = typer.Argument(..., help="Reply content (use '-' for stdin)"),
+    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable write receipt ID"),
 ):
     """Reply to a post via the native micro.blog API."""
     from mb.formatters import output
@@ -363,7 +430,13 @@ def reply(
 
     from mb.services import reply_post
 
-    result = reply_post(client, numeric_id, content)
+    result = (
+        get_service(ctx).write(
+            "post_reply", operation_id, dict(post_id=str(numeric_id), content=content)
+        )
+        if operation_id
+        else reply_post(client, numeric_id, content)
+    )
     output_or_exit(result, fmt)
 
 
@@ -371,12 +444,18 @@ def reply(
 def delete(
     ctx: typer.Context,
     post_id: str = typer.Argument(..., help="Post ID or URL to delete"),
+    operation_id: str | None = typer.Option(None, "--operation-id", help="Stable write receipt ID"),
 ):
     """Delete a post."""
 
     fmt = get_format(ctx)
     client = get_client(ctx)
 
+    if operation_id:
+        output_or_exit(
+            get_service(ctx).write("post_delete", operation_id, dict(identifier=post_id)), fmt
+        )
+        return
     url = resolve_post_url(client, post_id, fmt)
     result = client.micropub_delete(url)
     output_or_exit(result, fmt)
@@ -400,3 +479,25 @@ def list_posts(
             result["data"]["items"] = normalized
         add_content_text(result["data"])
     output_or_exit(result, fmt)
+
+
+@app.command("publish")
+def publish(
+    ctx: typer.Context,
+    identifier: str = typer.Argument(..., help="Existing draft URL or numeric ID"),
+    source_hash: str = typer.Option(..., "--source-hash", help="Reviewed post get source hash"),
+    operation_id: str = typer.Option(..., "--operation-id", help="Stable publish receipt ID"),
+):
+    """Publish an unchanged, reviewed draft at its existing URL."""
+    output_or_exit(
+        get_service(ctx).write(
+            "post_publish", operation_id, dict(identifier=identifier, source_hash=source_hash)
+        ),
+        get_format(ctx),
+    )
+
+
+@app.command("replies")
+def replies(ctx: typer.Context, count: int = typer.Option(10, "--count", "-n", min=1, max=50)):
+    """Read recent replies made by the authenticated account."""
+    output_or_exit(get_service(ctx).replies(count=count), get_format(ctx))

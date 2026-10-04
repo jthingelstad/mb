@@ -24,14 +24,18 @@ Reads are offloaded from the protocol event loop. Requests are serialized within
 | `identity` | Verify account and immutable destination |
 | `heartbeat` | Compact timeline and recent-mention summary |
 | `inbox`, `catchup` | Consumer-scoped attention windows |
-| `timeline`, `conversation` | Bounded read and full thread expansion |
+| `timeline`, `conversation` | Bounded timeline and native ID/public URL threads |
+| `discover`, `profile_get`, `replies` | Bounded account-scoped social reads |
+| `blog_search`, `blog_categories` | Selected-blog server-filtered source search/categories |
+| `media_preview`, `media_upload` | Reviewed local image workflow |
+| `post_publish` | Guarded existing-draft publication |
 | `blog_posts`, `post_get` | Recent own posts/drafts and exact source |
 | `post_preview` | Validate exact content without publishing |
 | `post_create`, `post_reply`, `post_edit`, `post_delete` | One authorized post lifecycle, requiring `operation_id` |
 | `checkpoint_ack` | Explicit local acknowledgement of a complete window |
 | `operation_status` | Durable receipt and uncertainty recovery |
 
-Resources: `mb://guide` (packaged operational/editorial guidance), `mb://identity` and `mb://discover-collections`. Discovery collections are served as reference data; the fuller discovery/upload/social surface remains available through the CLI.
+Resources: `mb://guide` (packaged operational/editorial guidance), `mb://identity` and `mb://discover-collections`. Discovery collections are served as reference data. Broader relationship/moderation commands remain CLI-only.
 
 ## Attention contract
 
@@ -64,3 +68,28 @@ uv run --locked --extra mcp pytest -q --cov=mb --cov-fail-under=70
 ```
 
 Tests use synthetic HTTP and isolated config/state, including a subprocess running the actual `mb mcp` command. Scenarios cover identity, session changes, thread expansion, own recent posts, preview/publish/read-back, complete backlog paging, independent consumers, stale acknowledgements, rates/timeouts, duplicate prevention, read-only mode and deliberately choosing no write. No live posting is needed. Before replacing 1.x, run a coordinated read-only host smoke check and review actual authorization/receipt recovery. No tag or package publication is part of this candidate.
+
+## Bounded additions and images
+
+The candidate now has 23 typed tools. `discover`, `profile_get`, `replies` and URL conversations are account-scoped reads; selected `--blog` does not retarget a social account. `blog_posts`, `blog_search` and `blog_categories` use the verified Micropub destination. Search sends `q=source&filter=QUERY&mp-destination=UID` server-side; counts/category filters apply to that returned window, which is explicitly incomplete. These reads are not a whole-blog audit. Public URL conversations use the fixed Micro.blog `/conversation.js` JSON Feed endpoint, can include Webmentions, and mark 404 as `not_found=true`. Other failures remain errors. The read-only live check returned HTTP 403 for this endpoint, so live URL-thread retrieval remains unverified.
+
+`post_get` includes a `source_hash`. To publish an existing draft, review its exact content/photos/categories and call `post_publish(identifier, source_hash, operation_id)`. MB verifies ownership, rereads source, requires draft status and the unchanged hash, and updates only `post-status` to `published` at the same URL. Retries return the existing receipt before checking the now-published source. This is a pre-dispatch conflict guard; the remote API provides no server-atomic compare-and-swap guarantee, so a concurrent edit between read and write remains possible.
+
+Local MCP images are disabled by default. An operator explicitly starts with `--media-root /absolute/reviewed/images`; tool inputs are relative paths under it. Child symlinks, traversal, absolute paths and nonregular files are refused. Supported inputs are static JPEG/PNG/WebP, at most 20 MiB and 40 megapixels. Pillow decodes and re-encodes pixels, applies orientation and removes metadata/comments/appended bytes. WebP becomes PNG; JPEG is re-encoded. Animation, SVG, arbitrary files, video and remote URL fetching are excluded from this tool.
+
+1. `media_preview(file, alt)` shows format, dimensions, upload byte count, input/upload hashes, alt text and selected destination. Nothing uploads.
+2. After authorization for the image/destination, `media_upload(file, alt, sha256, operation_id)` refuses a changed file and claims a receipt before upload. HTTP 202 means accepted (`processing_pending=true`), not confirmed public availability. Timeout/malformed confirmation yields unknown and is never automatically resent. A retry returns its receipt even after the file is gone.
+3. Preserve the returned URL and reviewed alt text. Call `post_preview(content, photo_url=URL, photo_alt=ALT, ...)`, then separately authorized `post_create` with a different stable ID. Alt text is sent on the post (`mp-photo-alt`), not only upload. A failed post does not trigger another upload. There is no transactional upload-plus-post API or automatic orphan-upload cleanup.
+
+```sh
+mb --media-root ./reviewed --format json media preview image.png --alt "Description"
+mb --media-root ./reviewed media upload image.png --alt "Description" --sha256 REVIEWED_SHA --operation-id image-upload-1
+mb post new "Caption" --photo-url RETURNED_URL --alt "Description" --operation-id image-post-1
+mb post get EXISTING_DRAFT_URL --format json
+mb post publish EXISTING_DRAFT_URL --source-hash REVIEWED_HASH --operation-id publish-draft-1
+mb operation-status publish-draft-1
+```
+
+CLI create/reply/edit/delete opt into shared CLI/MCP receipts with `--operation-id` and global `--state-file`. Receipt edit/delete inputs use exact URL or numeric ID; legacy slug resolution remains on the legacy path. Writes without an ID keep their compatibility path without deduplication guarantees. Receipt create refuses local `--photo`: upload separately and use its URL. Legacy `--photo` and `mb upload` still work and now decode supported images and resolve destination; their combined path has no atomic retry guarantee.
+
+A coordinated real image-to-post test would be valuable before adoption: choose a specifically approved image, destination, caption/alt and draft/publish choice; check availability, source alt and rendered output. No actual image was uploaded or published during verification. See [content-index proposal](content-index-plan.md) and [Homebrew release plan](homebrew-release-plan.md) for proposed subsequent work.
