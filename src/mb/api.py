@@ -305,7 +305,27 @@ class MicroblogClient:
     def post_reply(self, post_id: int, content: str) -> dict:
         """POST /posts/reply — reply to a post via the native API."""
         resp = self._request("POST", "/posts/reply", data={"id": post_id, "content": content})
-        return self._handle_response(resp)
+        result = self._handle_response(resp)
+        if result["ok"]:
+            data = result.get("data")
+            reply_id = data.get("id") if isinstance(data, dict) else None
+            if (
+                isinstance(reply_id, bool)
+                or not isinstance(reply_id, (str, int))
+                or not str(reply_id).isascii()
+                or len(str(reply_id)) > 20
+                or not str(reply_id).isdigit()
+                or int(reply_id) <= 0
+            ):
+                # A successful HTTP status without an identifiable reply cannot
+                # settle a write. Keep its claim recoverable and never resend it.
+                return {
+                    "ok": False,
+                    "error": "invalid_reply_confirmation",
+                    "code": 502,
+                    "outcome": "unknown",
+                }
+        return result
 
     def micropub_create(
         self,

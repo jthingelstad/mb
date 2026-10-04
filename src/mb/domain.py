@@ -25,43 +25,50 @@ def _extract_author_username(author: dict) -> str:
 
 def _build_thread(items: list[dict]) -> list[dict]:
     """Take conversation items and return flat ordered list root->leaf with depth."""
-    if not items:
-        return []
-
+    if not isinstance(items, list):
+        raise ValueError("Invalid conversation items")
     by_id: dict[str, dict] = {}
     children: dict[str, list[str]] = {}
-    all_ids = set()
-
+    parents: dict[str, str | None] = {}
     for item in items:
-        item_id = str(item.get("id", ""))
-        by_id[item_id] = item
-        all_ids.add(item_id)
+        if not isinstance(item, dict):
+            raise ValueError("Invalid conversation item")
+        identifier = item.get("id")
+        if (
+            isinstance(identifier, bool)
+            or not isinstance(identifier, (str, int))
+            or not str(identifier)
+        ):
+            raise ValueError("Missing conversation ID")
+        item_id = str(identifier)
+        if item_id in by_id:
+            raise ValueError("Duplicate conversation ID")
         mb_data = item.get("_microblog", {})
-        parent_id = str(mb_data.get("reply_to_id", "")) if mb_data.get("reply_to_id") else None
+        if not isinstance(mb_data, dict):
+            raise ValueError("Invalid conversation extension")
+        parent = mb_data.get("reply_to_id")
+        if parent is not None and (isinstance(parent, bool) or not isinstance(parent, (str, int))):
+            raise ValueError("Invalid conversation parent")
+        parent_id = str(parent) if parent else None
+        by_id[item_id] = item
+        parents[item_id] = parent_id
         if parent_id:
             children.setdefault(parent_id, []).append(item_id)
 
-    roots = []
-    for item in items:
-        item_id = str(item.get("id", ""))
-        mb_data = item.get("_microblog", {})
-        parent_id = str(mb_data.get("reply_to_id", "")) if mb_data.get("reply_to_id") else None
-        if not parent_id or parent_id not in all_ids:
-            roots.append(item_id)
-
+    roots = [identifier for identifier, parent in parents.items() if parent not in by_id]
     result = []
-
-    def walk(node_id: str, depth: int):
-        if node_id in by_id:
-            entry = dict(by_id[node_id])
-            entry["depth"] = depth
-            result.append(entry)
-        for child_id in children.get(node_id, []):
-            walk(child_id, depth + 1)
-
-    for root_id in roots:
-        walk(root_id, 0)
-
+    visited = set()
+    # Iterative preorder preserves feed sibling order without a recursion limit.
+    stack = [(identifier, 0) for identifier in reversed(roots)]
+    while stack:
+        identifier, depth = stack.pop()
+        if identifier in visited:
+            raise ValueError("Cyclic conversation")
+        visited.add(identifier)
+        result.append({**by_id[identifier], "depth": depth})
+        stack.extend((child, depth + 1) for child in reversed(children.get(identifier, [])))
+    if len(visited) != len(by_id):
+        raise ValueError("Cyclic conversation")
     return result
 
 

@@ -441,8 +441,12 @@ def mcp_command(
 
 
 @app.command("operation-status")
-def operation_status(ctx: typer.Context, operation_id: str = typer.Argument(...)):
+def operation_status(
+    ctx: typer.Context,
+    operation_id: str = typer.Argument(...),
+    scope: str | None = typer.Option(None, help="Receipt scope: blog or reply"),
+):
     """Read the shared CLI/MCP durable write receipt."""
     from mb.commands import get_service, output_or_exit
 
-    output_or_exit(get_service(ctx).operation_status(operation_id), get_format(ctx))
+    output_or_exit(get_service(ctx).operation_status(operation_id, scope), get_format(ctx))

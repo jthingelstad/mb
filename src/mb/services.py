@@ -105,11 +105,15 @@ def read_conversation(client: MicroblogClient, identifier: str) -> dict:
         return failure("Use a numeric Micro.blog ID or full public post URL")
     if not result["ok"]:
         return result
+    try:
+        items = [normalize_post(i) for i in _build_thread(result["data"]["items"])]
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return failure("Invalid conversation response", 502)
     return {
         "ok": True,
         "data": {
             **result["data"],
-            "items": [normalize_post(i) for i in _build_thread(result["data"]["items"])],
+            "items": items,
             "coverage": coverage,
             "scope": "account",
         },
@@ -277,7 +281,7 @@ class MicroblogService:
         )
 
     @staticmethod
-    def _ordered_items(result: dict) -> dict:
+    def _ordered_items(result: dict, *, preserve_order: bool = False) -> dict:
         if not result["ok"]:
             return result
         try:
@@ -289,9 +293,13 @@ class MicroblogService:
             ids = [int(i["id"]) for i in items]
             if len(ids) != len(set(ids)):
                 raise ValueError
+            if not preserve_order and ids != sorted(ids, reverse=True):
+                return failure(
+                    "Timeline IDs are not monotonic; checkpoint coverage cannot be proven", 502
+                )
             return {
                 "ok": True,
-                "data": {"items": sorted(items, key=lambda i: int(i["id"]), reverse=True)},
+                "data": {"items": items},
             }
         except (KeyError, TypeError, ValueError):
             return failure("Invalid timeline page; checkpoint was not advanced", 502)
@@ -304,19 +312,33 @@ class MicroblogService:
             since_id=int(since) if since else None,
             before_id=int(before) if before else None,
         )
-        result = self._ordered_items(result)
+        # Micro.blog's feed order determines pagination. IDs are unique, but
+        # imported/backdated posts need not appear in numeric ID order.
+        result = self._ordered_items(result, preserve_order=True)
         if not result["ok"]:
             return result
         items = result["data"]["items"]
+        if any(
+            (before is not None and int(i["id"]) == int(before))
+            or (since is not None and int(i["id"]) == int(since))
+            for i in items
+        ):
+            return failure("Upstream timeline page repeated an exclusive boundary", 502)
         selected = items[:count]
         more = len(items) > count
         if selected and not more:
             probe = self.client.get_timeline(
                 count=1, since_id=int(since) if since else None, before_id=int(selected[-1]["id"])
             )
-            probe = self._ordered_items(probe)
+            probe = self._ordered_items(probe, preserve_order=True)
             if not probe["ok"]:
                 return probe
+            if any(
+                int(i["id"]) in {int(item["id"]) for item in selected}
+                or (since is not None and int(i["id"]) == int(since))
+                for i in probe["data"]["items"]
+            ):
+                return failure("Upstream timeline pagination repeated an item or boundary", 502)
             more = bool(probe["data"].get("items"))
         return {
             "ok": True,
@@ -353,17 +375,20 @@ class MicroblogService:
             if not result["ok"]:
                 return result
             raw = result["data"]["items"]
-            items = sorted(
-                [i for i in raw if not checkpoint or int(i["id"]) > int(checkpoint)],
-                key=lambda i: int(i["id"]),
-                reverse=True,
-            )
-            complete = (
-                (
-                    checkpoint is None
-                    or not items
-                    or any(int(i["id"]) <= int(checkpoint) for i in raw)
+            if (
+                workflow != "inbox"
+                and checkpoint
+                and any(int(i["id"]) <= int(checkpoint) for i in raw)
+            ):
+                return failure(
+                    "Timeline crossed the numeric checkpoint fence; coverage is unknown", 502
                 )
+            # Mentions is only a recent window, not a since-ID feed. A smaller
+            # numeric ID cannot prove that its publication predates our checkpoint.
+            fence = next((index for index, i in enumerate(raw) if str(i["id"]) == checkpoint), None)
+            items = raw[:fence] if workflow == "inbox" and fence is not None else raw
+            complete = (
+                (checkpoint is None or fence is not None)
                 if workflow == "inbox"
                 else not raw or (workflow == "heartbeat" and checkpoint is None)
             )
@@ -393,9 +418,13 @@ class MicroblogService:
                 return failure(
                     "Upstream pagination did not move backwards; checkpoint was not advanced", 502
                 )
-            remaining = [i for i in raw if not checkpoint or int(i["id"]) > int(checkpoint)]
+            if checkpoint and any(int(i["id"]) <= int(checkpoint) for i in raw):
+                return failure(
+                    "Timeline crossed the numeric checkpoint fence; coverage is unknown", 502
+                )
+            remaining = raw
             window["before"] = str(raw[-1]["id"]) if raw else before
-            # An empty page or reaching the lower fence proves exhaustion even if upstream caps count.
+            # An empty native page proves exhaustion even if upstream caps count.
             window["complete"] = not raw or not remaining
         next_cursor = None
         if remaining:
@@ -776,11 +805,23 @@ class MicroblogService:
         self.state.finish(scope, operation_id, stored)
         return result
 
-    def operation_status(self, operation_id: str) -> dict:
+    def operation_status(self, operation_id: str, scope: str | None = None) -> dict:
         identity = self.identity()
         if not identity["ok"]:
             return identity
-        result = self.state.operation(self._scope(), operation_id)
-        if result is None:
-            result = self.state.operation(self._reply_scope(), operation_id)
-        return result if result is not None else failure("Operation not found", 404)
+        if scope not in {None, "blog", "reply"}:
+            return failure("Use blog or reply receipt scope")
+        receipts = {
+            name: self.state.operation(key, operation_id)
+            for name, key in {"blog": self._scope(), "reply": self._reply_scope()}.items()
+            if scope is None or name == scope
+        }
+        found = [r for r in receipts.values() if r is not None]
+        if len(found) > 1:
+            return failure(
+                "Operation ID exists in blog and reply scopes; select a scope",
+                409,
+                reason="ambiguous_operation",
+                operation_id=operation_id,
+            )
+        return found[0] if found else failure("Operation not found", 404)

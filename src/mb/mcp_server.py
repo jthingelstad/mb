@@ -6,7 +6,7 @@ import threading
 from collections.abc import Callable
 from importlib.metadata import version
 from importlib.resources import files
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import anyio
 from mcp import types
@@ -129,6 +129,7 @@ class Acknowledge(Input):
 
 class Operation(Input):
     operation_id: OperationID
+    scope: Literal["blog", "reply"] | None = None
 
 
 # The catalog is static; listing capabilities never opens authentication or contacts the network.
@@ -254,7 +255,8 @@ def redact(value: Any, token: str) -> Any:
             if key in {"id", "reply_to_id"} and isinstance(item, int)
             else redact(item, token)
             for key, item in value.items()
-            if key.lower()
+            if not (token and token in key)
+            and key.lower()
             not in {"token", "access_token", "refresh_token", "authorization", "password"}
         }
     return value
@@ -308,7 +310,10 @@ class Adapter:
             arguments = entry[0].model_validate(params.arguments or {}).model_dump()
         except ValidationError as exc:
             # Validation errors may echo input. Return field locations only.
-            fields = [".".join(map(str, e["loc"])) for e in exc.errors()]
+            fields = [
+                ".".join(map(str, e["loc"])) if e["type"] != "extra_forbidden" else "unknown field"
+                for e in exc.errors()
+            ]
             return result_block(failure("Invalid arguments: " + ", ".join(fields)))
         try:
             result = await anyio.to_thread.run_sync(

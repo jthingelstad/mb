@@ -310,3 +310,48 @@ async def test_stdio_local_image_draft_workflow_and_new_reads(tmp_path):
                 "media_preview", {"file": "../secret.png", "alt": "Bad"}
             )
             assert result.is_error
+
+
+@pytest.mark.anyio
+async def test_stdio_concurrent_retries_and_scoped_receipt_lookup(tmp_path):
+    import anyio
+
+    async with stdio_client(parameters(tmp_path)) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            results = []
+
+            async def create():
+                results.append(
+                    await session.call_tool(
+                        "post_create", {"content": "Fixture only", "operation_id": "shared-id"}
+                    )
+                )
+
+            async with anyio.create_task_group() as group:
+                for _ in range(4):
+                    group.start_soon(create)
+            assert all(r.structured_content["outcome"] == "applied" for r in results)
+            assert len({r.structured_content["data"]["url"] for r in results}) == 1
+            reply = await session.call_tool(
+                "post_reply",
+                {"post_id": "8", "content": "Fixture reply", "operation_id": "shared-id"},
+            )
+            assert reply.structured_content["outcome"] == "applied"
+            ambiguous = await session.call_tool("operation_status", {"operation_id": "shared-id"})
+            assert (
+                ambiguous.is_error
+                and ambiguous.structured_content["reason"] == "ambiguous_operation"
+            )
+            blog = await session.call_tool(
+                "operation_status", {"operation_id": "shared-id", "scope": "blog"}
+            )
+            reply = await session.call_tool(
+                "operation_status", {"operation_id": "shared-id", "scope": "reply"}
+            )
+            assert blog.structured_content["data"]["url"] == "https://agent.example/post"
+            assert reply.structured_content["data"]["id"] == "9"
+            bad = await session.call_tool(
+                "operation_status", {"operation_id": "shared-id", "scope": "account"}
+            )
+            assert bad.is_error and bad.structured_content["code"] == 400
