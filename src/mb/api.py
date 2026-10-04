@@ -30,19 +30,53 @@ class MicroblogClient:
 
     # ── helpers ──────────────────────────────────────────────
 
+    def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+        """Contain transport failures without leaking request headers or credential values."""
+        try:
+            return self._client.request(method, path, **kwargs)
+        except httpx.HTTPError as exc:
+            before_send = isinstance(
+                exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+            )
+            outcome = "not_applied" if method == "GET" or before_send else "unknown"
+            return httpx.Response(
+                599,
+                extensions={
+                    "mb_error": {
+                        "ok": False,
+                        "error": "network_error",
+                        "code": 599,
+                        "outcome": outcome,
+                    }
+                },
+            )
+
+    @staticmethod
+    def _retry_after(resp: httpx.Response) -> int:
+        try:
+            return max(0, int(resp.headers.get("Retry-After", "60")))
+        except ValueError:
+            return 60
+
     def _handle_response(self, resp: httpx.Response) -> dict:
         """Check for errors and return parsed JSON or error dict."""
+        if "mb_error" in resp.extensions:
+            return resp.extensions["mb_error"]
         if resp.status_code == 429:
-            retry_after = resp.headers.get("Retry-After", 60)
+            retry_after = self._retry_after(resp)
             return {
                 "ok": False,
                 "error": "rate_limited",
+                "code": 429,
                 "retry_after": int(retry_after),
             }
         if resp.status_code == 401:
             return {"ok": False, "error": "Unauthorized — invalid token", "code": 401}
         if resp.status_code >= 400:
-            text = resp.text[:200].strip() or f"HTTP {resp.status_code} error"
+            text = (
+                resp.text.replace(self.token, "[redacted]")[:200].strip()
+                or f"HTTP {resp.status_code} error"
+            )
             return {"ok": False, "error": text, "code": resp.status_code}
         # Some endpoints return empty body on success (e.g. delete)
         if not resp.text.strip():
@@ -50,17 +84,21 @@ class MicroblogClient:
         try:
             return {"ok": True, "data": resp.json()}
         except (ValueError, KeyError):
-            return {"ok": True, "data": {"raw": resp.text}}
+            return {"ok": False, "error": "invalid_response", "code": 502}
 
     # ── auth / user info ────────────────────────────────────
 
     def verify_token(self) -> dict:
         """POST /account/verify — returns user info if token is valid."""
-        resp = self._client.post("/account/verify", data={"token": self.token})
+        resp = self._request("POST", "/account/verify", data={"token": self.token})
         result = self._handle_response(resp)
         # API returns 200 with {"error": "..."} for invalid tokens
         if result["ok"] and isinstance(result.get("data"), dict) and "error" in result["data"]:
-            return {"ok": False, "error": result["data"]["error"], "code": 401}
+            return {
+                "ok": False,
+                "error": str(result["data"]["error"]).replace(self.token, "[redacted]"),
+                "code": 401,
+            }
         return result
 
     # ── JSON API (reads) ────────────────────────────────────
@@ -73,79 +111,79 @@ class MicroblogClient:
             params["since_id"] = since_id
         if before_id is not None:
             params["before_id"] = before_id
-        resp = self._client.get("/posts/all", params=params)
+        resp = self._request("GET", "/posts/all", params=params)
         return self._handle_response(resp)
 
     def get_mentions(self) -> dict:
-        resp = self._client.get("/posts/mentions")
+        resp = self._request("GET", "/posts/mentions")
         return self._handle_response(resp)
 
     def get_photos(self) -> dict:
-        resp = self._client.get("/posts/photos")
+        resp = self._request("GET", "/posts/photos")
         return self._handle_response(resp)
 
     def get_discover(self, collection: str | None = None) -> dict:
         if collection:
-            resp = self._client.get(f"/posts/discover/{collection}")
+            resp = self._request("GET", f"/posts/discover/{collection}")
         else:
-            resp = self._client.get("/posts/discover")
+            resp = self._request("GET", "/posts/discover")
         return self._handle_response(resp)
 
     def get_conversation(self, post_id: int) -> dict:
-        resp = self._client.get("/posts/conversation", params={"id": post_id})
+        resp = self._request("GET", "/posts/conversation", params={"id": post_id})
         return self._handle_response(resp)
 
     def get_user(self, username: str) -> dict:
-        resp = self._client.get(f"/posts/{username}")
+        resp = self._request("GET", f"/posts/{username}")
         return self._handle_response(resp)
 
     def get_following(self, username: str) -> dict:
-        resp = self._client.get(f"/users/following/{username}")
+        resp = self._request("GET", f"/users/following/{username}")
         return self._handle_response(resp)
 
     def get_user_discover(self, username: str) -> dict:
-        resp = self._client.get(f"/users/discover/{username}")
+        resp = self._request("GET", f"/users/discover/{username}")
         return self._handle_response(resp)
 
     def is_following(self, username: str) -> dict:
-        resp = self._client.get("/users/is_following", params={"username": username})
+        resp = self._request("GET", "/users/is_following", params={"username": username})
         return self._handle_response(resp)
 
     def follow(self, username: str) -> dict:
-        resp = self._client.post("/users/follow", data={"username": username})
+        resp = self._request("POST", "/users/follow", data={"username": username})
         return self._handle_response(resp)
 
     def unfollow(self, username: str) -> dict:
-        resp = self._client.post("/users/unfollow", data={"username": username})
+        resp = self._request("POST", "/users/unfollow", data={"username": username})
         return self._handle_response(resp)
 
     def mute(self, value: str) -> dict:
         """Mute a username or keyword."""
-        resp = self._client.post("/users/mute", data={"username": value})
+        resp = self._request("POST", "/users/mute", data={"username": value})
         return self._handle_response(resp)
 
     def get_muting(self) -> dict:
-        resp = self._client.get("/users/muting")
+        resp = self._request("GET", "/users/muting")
         return self._handle_response(resp)
 
     def unmute(self, mute_id: int) -> dict:
-        resp = self._client.post("/users/unmute", data={"id": mute_id})
+        resp = self._request("POST", "/users/unmute", data={"id": mute_id})
         return self._handle_response(resp)
 
     def block(self, username: str) -> dict:
-        resp = self._client.post("/users/block", data={"username": username})
+        resp = self._request("POST", "/users/block", data={"username": username})
         return self._handle_response(resp)
 
     def get_blocking(self) -> dict:
-        resp = self._client.get("/users/blocking")
+        resp = self._request("GET", "/users/blocking")
         return self._handle_response(resp)
 
     def unblock(self, block_id: int) -> dict:
-        resp = self._client.post("/users/unblock", data={"id": block_id})
+        resp = self._request("POST", "/users/unblock", data={"id": block_id})
         return self._handle_response(resp)
 
     def check_timeline(self, since_id: int) -> dict:
-        resp = self._client.get("/posts/check", params={"since_id": since_id})
+        resp = self._request("GET", "/posts/check", params={"since_id": since_id})
         return self._handle_response(resp)
 
     def get_blog_posts(self, username: str, count: int = 20, category: str | None = None) -> dict:
@@ -162,7 +200,7 @@ class MicroblogClient:
         params: dict = {"count": count}
         if category:
             params["category"] = category
-        resp = self._client.get(f"/posts/{username}", params=params)
+        resp = self._request("GET", f"/posts/{username}", params=params)
         return self._handle_response(resp)
 
     def search_blog(self, username: str, query: str, category: str | None = None) -> dict:
@@ -185,7 +223,7 @@ class MicroblogClient:
         params: dict = {"search": query}
         if category:
             params["category"] = category
-        resp = self._client.get(f"/posts/{username}", params=params)
+        resp = self._request("GET", f"/posts/{username}", params=params)
         return self._handle_response(resp)
 
     @staticmethod
@@ -225,7 +263,7 @@ class MicroblogClient:
 
     def post_reply(self, post_id: int, content: str) -> dict:
         """POST /posts/reply — reply to a post via the native API."""
-        resp = self._client.post("/posts/reply", data={"id": post_id, "content": content})
+        resp = self._request("POST", "/posts/reply", data={"id": post_id, "content": content})
         return self._handle_response(resp)
 
     def micropub_create(
@@ -257,7 +295,7 @@ class MicroblogClient:
         destination = mp_destination or self.default_destination
         if destination:
             data["mp-destination"] = destination
-        resp = self._client.post("/micropub", data=data)
+        resp = self._request("POST", "/micropub", data=data)
         return self._handle_micropub_response(resp)
 
     def micropub_update(
@@ -289,7 +327,7 @@ class MicroblogClient:
                 "code": 400,
             }
         data["replace"] = replace
-        resp = self._client.post("/micropub", json=data)
+        resp = self._request("POST", "/micropub", json=data)
         return self._handle_micropub_response(resp)
 
     def micropub_delete(self, url: str) -> dict:
@@ -299,7 +337,7 @@ class MicroblogClient:
         }
         if self.default_destination:
             data["mp-destination"] = self.default_destination
-        resp = self._client.post("/micropub", data=data)
+        resp = self._request("POST", "/micropub", data=data)
         return self._handle_micropub_response(resp)
 
     def micropub_get(self, url: str) -> dict:
@@ -307,7 +345,7 @@ class MicroblogClient:
         params: dict = {"q": "source", "url": url}
         if self.default_destination:
             params["mp-destination"] = self.default_destination
-        resp = self._client.get("/micropub", params=params)
+        resp = self._request("GET", "/micropub", params=params)
         return self._handle_response(resp)
 
     def micropub_list(self, drafts: bool = False) -> dict:
@@ -316,7 +354,7 @@ class MicroblogClient:
             params["post-status"] = "draft"
         if self.default_destination:
             params["mp-destination"] = self.default_destination
-        resp = self._client.get("/micropub", params=params)
+        resp = self._request("GET", "/micropub", params=params)
         return self._handle_response(resp)
 
     def micropub_get_categories(self) -> dict:
@@ -324,12 +362,12 @@ class MicroblogClient:
         params: dict = {"q": "category"}
         if self.default_destination:
             params["mp-destination"] = self.default_destination
-        resp = self._client.get("/micropub", params=params)
+        resp = self._request("GET", "/micropub", params=params)
         return self._handle_response(resp)
 
     def micropub_get_config(self) -> dict:
         """GET /micropub?q=config — get Micropub config including blog destinations."""
-        resp = self._client.get("/micropub", params={"q": "config"})
+        resp = self._request("GET", "/micropub", params={"q": "config"})
         return self._handle_response(resp)
 
     def micropub_upload_bytes(
@@ -341,7 +379,7 @@ class MicroblogClient:
         data = {}
         if alt:
             data["mp-photo-alt"] = alt
-        resp = self._client.post("/micropub/media", files=files, data=data)
+        resp = self._request("POST", "/micropub/media", files=files, data=data)
         if resp.status_code in (201, 202):
             location = resp.headers.get("Location", "")
             return {"ok": True, "data": {"url": location}}
@@ -359,15 +397,35 @@ class MicroblogClient:
 
     def _handle_micropub_response(self, resp: httpx.Response) -> dict:
         """Handle Micropub responses (201 with Location header on success)."""
+        if "mb_error" in resp.extensions:
+            return resp.extensions["mb_error"]
         if resp.status_code == 429:
-            retry_after = resp.headers.get("Retry-After", 60)
-            return {"ok": False, "error": "rate_limited", "retry_after": int(retry_after)}
+            retry_after = self._retry_after(resp)
+            return {
+                "ok": False,
+                "error": "rate_limited",
+                "code": 429,
+                "retry_after": int(retry_after),
+            }
         if resp.status_code == 401:
             return {"ok": False, "error": "Unauthorized — invalid token", "code": 401}
         if resp.status_code >= 400:
-            text = resp.text[:200].strip() or f"HTTP {resp.status_code} error"
+            text = (
+                resp.text.replace(self.token, "[redacted]")[:200].strip()
+                or f"HTTP {resp.status_code} error"
+            )
             return {"ok": False, "error": text, "code": resp.status_code}
-        location = resp.headers.get("Location", "")
-        # Extract post ID from URL if possible
+        payload = {}
+        if resp.text.strip():
+            try:
+                value = resp.json()
+                payload = value if isinstance(value, dict) else {}
+            except ValueError:
+                pass
+        location = resp.headers.get("Location") or payload.get("url", "")
         post_id = location.rstrip("/").split("/")[-1] if location else ""
-        return {"ok": True, "data": {"url": location, "id": post_id}}
+        data = {"url": location, "id": post_id}
+        # Draft preview links are returned to the caller, never copied into durable receipts.
+        if isinstance(payload.get("preview"), str):
+            data["preview"] = payload["preview"]
+        return {"ok": True, "data": data}

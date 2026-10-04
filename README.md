@@ -1,8 +1,10 @@
 # mb
 
-A command-line client for [micro.blog](https://micro.blog), designed for agent use.
+A bridge to [micro.blog](https://micro.blog), designed for agents: an agent-first CLI and an optional local stdio MCP server.
 
 `mb` prioritizes agent-friendly output, composable commands, and zero interactive prompts, making it a good fit for AI agents and scripts.
+
+The 2.0 release candidate adds typed tools, explicit consumer-scoped acknowledgement and durable write receipts. See [MCP setup and contracts](docs/mcp.md).
 
 ## Install
 
@@ -81,10 +83,11 @@ Human users can set `export MB_FORMAT=human` in their shell profile. Scripts tha
 This repo includes local skills for agents using `mb`. The intended split is:
 
 - `mb-cli`: the base operational skill for using the CLI safely and effectively
+- `mb-mcp`: the operational skill for typed stdio tools and explicit acknowledgement
 - `mb-for-user-delegation`: behavior guidance for agents acting on behalf of a human user's account
 - `mb-agent-blogger`: behavior guidance for agents posting on their own account as themselves
 
-Use `mb-cli` whenever an agent is operating the tool. Pair it with exactly one behavior skill depending on whose blog is being managed.
+Use `mb-cli` for CLI operations or `mb-mcp` for MCP operations. Pair it with exactly one behavior skill depending on whose blog is being managed.
 
 Examples:
 
@@ -140,6 +143,15 @@ If you prefer shared install locations, OpenClaw can also load skills from globa
 
 ## Commands
 
+### MCP
+
+```text
+mb mcp --consumer dot --read-only
+mb --profile work --blog https://work.micro.blog/ mcp --consumer openclaw
+```
+
+Install the optional `mcp` extra first. [Client examples](docs/mcp.md#client-examples) are provided for review; MB does not register them or change the existing installation.
+
 ### Auth & Profiles
 
 ```
@@ -167,7 +179,7 @@ mb discover --collection books
 mb post new "Hello world"
 mb post short "A small thought"
 mb post new --title "My Post" --content "Body text"
-mb post new --draft                          Save as draft
+mb post new --draft "Draft text"             Save as draft
 mb post short --strict-300 "A small thought"
 mb post new --file post.md                   Post from file (first # heading = title)
 mb post new --photo image.jpg --alt "desc"   Post with photo
@@ -203,7 +215,7 @@ mb checkpoint get inbox
 mb checkpoint clear inbox
 mb heartbeat --count 3 --mention-count 3
 mb heartbeat --mentions-only
-mb heartbeat --advance
+mb heartbeat
 mb inbox --count 10
 mb inbox --reason thread-reply
 mb inbox --fresh-hours 24
@@ -264,11 +276,11 @@ mb blog search "query"       Search your posts
 ## Development
 
 ```bash
-uv sync --locked
-uv run --locked ruff check .
-uv run --locked ruff format --check .
-uv run --locked mypy src/mb --ignore-missing-imports
-uv run --locked pytest tests/ -q --cov=mb --cov-report=term-missing --cov-fail-under=70
+uv sync --locked --extra mcp
+uv run --locked --extra mcp ruff check .
+uv run --locked --extra mcp ruff format --check .
+uv run --locked --extra mcp mypy src/mb --ignore-missing-imports
+uv run --locked --extra mcp pytest tests/ -q --cov=mb --cov-report=term-missing --cov-fail-under=70
 ```
 
 Tests use `httpx.MockTransport` — no live API calls required.
@@ -293,7 +305,7 @@ mb checkpoint list
 mb checkpoint clear heartbeat
 
 # Check for new activity and advance the heartbeat cursor
-mb heartbeat --advance
+mb heartbeat
 
 # Check the inbox and advance that cursor
 mb inbox --advance

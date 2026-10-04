@@ -100,10 +100,8 @@ def main(
         fmt = "human"
     else:
         # MB_FORMAT env var as default; explicit --format flag overrides
-        import click
-
         fmt_source = ctx.get_parameter_source("fmt")
-        explicitly_set = fmt_source is not None and fmt_source != click.core.ParameterSource.DEFAULT
+        explicitly_set = fmt_source is not None and fmt_source.name != "DEFAULT"
         if not explicitly_set:
             env_fmt = os.environ.get("MB_FORMAT")
             if env_fmt:
@@ -130,6 +128,8 @@ def auth(
     result = client.verify_token()
     if result["ok"]:
         username = result["data"].get("username", "")
+        # Flexible global option parsing moves --blog into the parent context.
+        blog_dest = blog_dest or ctx.obj.get("blog")
         config.save_config(token=token, username=username, blog=blog_dest, profile=profile)
         data = {"username": username, "message": "Token saved", "profile": profile}
         if blog_dest:
@@ -374,3 +374,47 @@ def poll(
             time.sleep(poll_interval)
     except KeyboardInterrupt:
         pass
+
+
+@app.command("mcp")
+def mcp_command(
+    ctx: typer.Context,
+    consumer: str = typer.Option(
+        "dot", "--consumer", help="Independent attention consumer (dot, openclaw, etc.)"
+    ),
+    read_only: bool = typer.Option(
+        False, "--read-only", help="Disable remote writes and checkpoint acknowledgement"
+    ),
+    state_file: str | None = typer.Option(
+        None, "--state-file", help="Local SQLite cursor and operation-receipt file"
+    ),
+):
+    """Serve optional MCP tools over local stdio. Install mb[mcp] first."""
+    from pathlib import Path
+
+    try:
+        import anyio
+
+        from mb.mcp_server import serve
+        from mb.services import AuthenticationUnavailable, MicroblogService
+    except ImportError:
+        typer.echo("MCP support is optional. Install with: uv tool install 'mb[mcp]'", err=True)
+        raise typer.Exit(1) from None
+    profile = get_profile(ctx)
+    blog_dest = ctx.obj.get("blog")
+    state_path = Path(state_file) if state_file else config.CONFIG_DIR / "mcp-state.sqlite3"
+
+    def service_factory():
+        token = config.get_token(profile=profile)
+        if not token:
+            raise AuthenticationUnavailable("No token configured")
+        return MicroblogService(
+            MicroblogClient(token),
+            profile,
+            blog_dest or config.get_blog(profile=profile),
+            consumer,
+            state_path,
+            read_only,
+        )
+
+    anyio.run(serve, service_factory)

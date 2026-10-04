@@ -112,8 +112,11 @@ def new(
     if not title:
         title = file_title
 
-    if not content:
-        output({"ok": False, "error": "Content is empty", "code": 400}, fmt)
+    from mb.services import preview_post
+
+    validation = preview_post(content, photo_url=photo_url)
+    if not validation["ok"]:
+        output(validation, fmt)
         raise SystemExit(1)
 
     try:
@@ -147,7 +150,10 @@ def new(
             raise SystemExit(1)
         photo_url = upload["data"]["url"]
 
-    result = client.micropub_create(
+    from mb.services import create_post
+
+    result = create_post(
+        client,
         content=content,
         title=title,
         draft=draft,
@@ -194,8 +200,11 @@ def short(
     if file_title:
         content = f"# {file_title}\n\n{content}".strip()
 
-    if not content:
-        output({"ok": False, "error": "Content is empty", "code": 400}, fmt)
+    from mb.services import preview_post
+
+    validation = preview_post(content, photo_url=photo_url)
+    if not validation["ok"]:
+        output(validation, fmt)
         raise SystemExit(1)
 
     try:
@@ -245,7 +254,10 @@ def short(
             raise SystemExit(1)
         photo_url = upload["data"]["url"]
 
-    result = client.micropub_create(
+    from mb.services import create_post
+
+    result = create_post(
+        client,
         content=content,
         draft=draft,
         photo_url=photo_url,
@@ -331,7 +343,6 @@ def reply(
     content: str = typer.Argument(..., help="Reply content (use '-' for stdin)"),
 ):
     """Reply to a post via the native micro.blog API."""
-    from mb.commands import _extract_author_username
     from mb.formatters import output
 
     fmt = get_format(ctx)
@@ -350,29 +361,9 @@ def reply(
         )
         raise SystemExit(1)
 
-    # Look up the post to find the author's username
-    conv = client.get_conversation(numeric_id)
-    if not conv["ok"]:
-        output(conv, fmt)
-        raise SystemExit(1)
+    from mb.services import reply_post
 
-    username = None
-    for item in conv["data"].get("items", []):
-        if str(item.get("id")) == str(numeric_id):
-            username = _extract_author_username(item.get("author", {}))
-            break
-
-    if not username:
-        output(
-            {"ok": False, "error": f"Post {post_id} not found in conversation", "code": 404}, fmt
-        )
-        raise SystemExit(1)
-
-    # Prepend @username if not already present
-    if not content.lstrip().startswith(f"@{username}"):
-        content = f"@{username} {content}"
-
-    result = client.post_reply(numeric_id, content)
+    result = reply_post(client, numeric_id, content)
     output_or_exit(result, fmt)
 
 

@@ -6,6 +6,7 @@ import typer
 
 from mb import config
 from mb.commands import add_content_text, get_client, get_format, get_profile, output_or_exit
+from mb.domain import _classify_item as _classify_item
 
 
 def _item_id(item: dict) -> int | None:
@@ -29,37 +30,6 @@ def _items_since(items: list[dict], checkpoint: int | None) -> list[dict]:
         if item_id is not None and item_id > checkpoint:
             filtered.append(item)
     return filtered
-
-
-def _classify_item(client, username: str, item: dict) -> dict:
-    """Classify one mention item with minimal conversation context."""
-    item_id = _item_id(item)
-    entry = {
-        "reason": "mention",
-        "thread_has_self_post": False,
-        "thread_count": 0,
-        "item": item,
-    }
-    if item_id is None:
-        return entry
-
-    conversation = client.get_conversation(item_id)
-    if not conversation["ok"]:
-        entry["conversation_error"] = conversation.get("error")
-        return entry
-
-    thread = conversation["data"].get("items", [])
-    thread_data = {"items": thread}
-    add_content_text(thread_data)
-    entry["thread_count"] = len(thread)
-    entry["thread_has_self_post"] = any(
-        candidate.get("author", {}).get("_microblog", {}).get("username") == username
-        and str(candidate.get("id")) != str(item_id)
-        for candidate in thread
-    )
-    if entry["thread_has_self_post"]:
-        entry["reason"] = "thread-reply"
-    return entry
 
 
 def _parse_timestamp(timestamp: str | None) -> datetime | None:
@@ -159,6 +129,16 @@ def run(
         filtered_count = len(age_filtered)
     latest_id = _item_id(window[0]) if window else checkpoint
     advanced = False
+    if advance and filtered_count > len(items):
+        output_or_exit(
+            {
+                "ok": False,
+                "error": "Cannot advance a truncated inbox; read the remaining items first",
+                "code": 409,
+            },
+            fmt,
+        )
+        return
     if advance and latest_id is not None:
         config.save_named_checkpoint("inbox", latest_id, profile=profile)
         advanced = True

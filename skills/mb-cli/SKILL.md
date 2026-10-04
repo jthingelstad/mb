@@ -46,7 +46,7 @@ mb user following | mb lookup users --days-since-posting
 - `mb heartbeat` is the default session-start check for agent use.
 - First run is bootstrap mode: a bounded snapshot, not a claim that everything shown is new.
 - Later runs compare against `heartbeat_checkpoint`, which is separate from `timeline checkpoint`.
-- Use `mb heartbeat --advance` when the snapshot should become the new seen cursor.
+- Heartbeat advances by default; use `mb heartbeat --no-advance` to inspect without saving.
 - Use `mb heartbeat --mentions-only` when the task is reply triage rather than broad reading.
 - Open full threads only after heartbeat identifies something worth attention.
 
@@ -58,6 +58,7 @@ mb user following | mb lookup users --days-since-posting
 - Use `mb checkpoint list` when cursor state is unclear.
 - Use `mb checkpoint clear <name>` to reset a stuck workflow cursor.
 - Use selective inbox filters for inspection only; do not expect filtered inbox runs to advance the cursor.
+- Truncated inbox/catchup results cannot advance; increase the CLI count or use MCP paging plus explicit acknowledgement.
 - Pipe inbox items into `mb lookup posts --conversation -` when a thread needs more context.
 
 ## Public boundaries
@@ -88,7 +89,7 @@ Session start:
 
 ```bash
 mb heartbeat
-mb heartbeat --advance
+mb heartbeat --no-advance
 mb heartbeat --mentions-only
 mb heartbeat --count 3 --mention-count 3
 mb inbox

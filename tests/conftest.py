@@ -7,6 +7,18 @@ import pytest
 
 from mb.api import MicroblogClient
 
+
+@pytest.fixture(autouse=True)
+def isolated_configuration(tmp_path, monkeypatch):
+    """Tests must never read or rewrite the operator's installed authentication."""
+    from mb import config
+
+    monkeypatch.setattr(config, "CONFIG_DIR", tmp_path / "config")
+    monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "config" / "config.toml")
+    for name in ("MB_TOKEN", "MB_BLOG", "MB_FORMAT"):
+        monkeypatch.delenv(name, raising=False)
+
+
 # ── Sample response data ────────────────────────────────────
 
 VERIFY_RESPONSE = {

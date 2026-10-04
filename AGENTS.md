@@ -315,16 +315,16 @@ Practical implications:
 Install:
 
 ```bash
-uv sync --locked
+uv sync --locked --extra mcp
 ```
 
 Run the same checks CI uses:
 
 ```bash
-uv run --locked ruff check .
-uv run --locked ruff format --check .
-uv run --locked mypy src/mb --ignore-missing-imports
-uv run --locked pytest tests/ -q --cov=mb --cov-report=term-missing --cov-fail-under=70
+uv run --locked --extra mcp ruff check .
+uv run --locked --extra mcp ruff format --check .
+uv run --locked --extra mcp mypy src/mb --ignore-missing-imports
+uv run --locked --extra mcp pytest tests/ -q --cov=mb --cov-report=term-missing --cov-fail-under=70
 ```
 
 Testing guidance:
@@ -333,3 +333,10 @@ Testing guidance:
 - No live API calls should be added to tests
 - Favor CLI tests for argument parsing and output behavior
 - Favor API tests for transport and response normalization
+
+
+## MCP candidate
+
+`mb mcp` is a local stdio adapter over shared domain/services, not a shell wrapper. The optional `mcp` extra must not enter the base CLI import path. See `docs/mcp.md` for typed contracts and client examples. Keep operational guidance (`mb-cli`, `mb-mcp`) separate from the two behavior skills. `src/mb/guidance/mcp.md` ships in the wheel and is exposed as `mb://guide`.
+
+Pure MCP reads never advance. Consumer checkpoints are separate from CLI config cursors; only a complete receipt may be acknowledged. Operation IDs and receipts are shared per verified account/blog in one state file. Unknown writes are never auto-resent. Do not test with live writes, register persistent clients, change installed auth/cron, or replace 1.x as part of candidate verification.

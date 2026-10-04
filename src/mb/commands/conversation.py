@@ -3,50 +3,9 @@
 import typer
 
 from mb.commands import add_content_text, get_client, get_format
+from mb.domain import _build_thread as _build_thread
 
 app = typer.Typer(no_args_is_help=False, invoke_without_command=True, rich_markup_mode=None)
-
-
-def _build_thread(items: list[dict]) -> list[dict]:
-    """Take conversation items and return flat ordered list root->leaf with depth."""
-    if not items:
-        return []
-
-    by_id: dict[str, dict] = {}
-    children: dict[str, list[str]] = {}
-    all_ids = set()
-
-    for item in items:
-        item_id = str(item.get("id", ""))
-        by_id[item_id] = item
-        all_ids.add(item_id)
-        mb_data = item.get("_microblog", {})
-        parent_id = str(mb_data.get("reply_to_id", "")) if mb_data.get("reply_to_id") else None
-        if parent_id:
-            children.setdefault(parent_id, []).append(item_id)
-
-    roots = []
-    for item in items:
-        item_id = str(item.get("id", ""))
-        mb_data = item.get("_microblog", {})
-        parent_id = str(mb_data.get("reply_to_id", "")) if mb_data.get("reply_to_id") else None
-        if not parent_id or parent_id not in all_ids:
-            roots.append(item_id)
-
-    result = []
-
-    def walk(node_id: str, depth: int):
-        if node_id in by_id:
-            entry = dict(by_id[node_id])
-            entry["depth"] = depth
-            result.append(entry)
-        for child_id in children.get(node_id, []):
-            walk(child_id, depth + 1)
-
-    for root_id in roots:
-        walk(root_id, 0)
-
-    return result
 
 
 @app.callback(invoke_without_command=True)

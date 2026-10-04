@@ -4,6 +4,9 @@ import re
 
 import typer
 
+from mb.domain import _extract_author_username as _extract_author_username
+from mb.domain import add_content_text as add_content_text
+
 
 def get_client(ctx: typer.Context | None = None):
     from mb.cli import get_client as _get_client
@@ -52,15 +55,6 @@ def output_or_exit(result: dict, fmt: str) -> None:
     output(result, fmt)
     if not result["ok"]:
         raise SystemExit(1)
-
-
-def add_content_text(data: dict) -> None:
-    """Add content_text (stripped HTML) to all items in a response."""
-    from mb.formatters import strip_html
-
-    for item in data.get("items", []):
-        if "content_html" in item:
-            item["content_text"] = strip_html(item["content_html"]).strip()
 
 
 def _micropub_item_url(item: dict) -> str:
@@ -114,19 +108,6 @@ def resolve_post_url(client, post_id: str, fmt: str):
         output({"ok": False, "error": f"Post {post_id} not found", "code": 404}, fmt)
         raise SystemExit(1)
     return _micropub_item_url(matched[0])
-
-
-def _extract_author_username(author: dict) -> str:
-    """Extract username from an author object."""
-    mb = author.get("_microblog")
-    if isinstance(mb, dict) and mb.get("username"):
-        return mb["username"]
-    url = author.get("url", "")
-    if url:
-        parts = url.rstrip("/").split("/")
-        if parts:
-            return parts[-1]
-    return author.get("name", "")
 
 
 def extract_post_id(value: str) -> int | None:
