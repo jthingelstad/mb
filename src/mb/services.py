@@ -5,6 +5,7 @@ import re
 import secrets
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -59,13 +60,13 @@ def create_post(client: MicroblogClient, **arguments) -> dict:
     return client.micropub_create(**arguments) if preview["ok"] else preview
 
 
-def reply_post(client: MicroblogClient, post_id: int, content: str) -> dict:
-    """Native reply with the recipient mention expected by Micro.blog."""
+def reply_content(client: MicroblogClient, post_id: int, content: str) -> dict:
+    """Read the recipient and add the mention Micro.blog expects; never writes."""
     if not content.strip():
-        return failure("Content is empty")
+        return failure("Content is empty", outcome="not_applied")
     result = client.get_conversation(post_id)
     if not result["ok"]:
-        return result
+        return {**result, "outcome": "not_applied"}
     username = next(
         (
             _extract_author_username(i.get("author", {}))
@@ -75,10 +76,10 @@ def reply_post(client: MicroblogClient, post_id: int, content: str) -> dict:
         None,
     )
     if not username:
-        return failure("Post not found in conversation", 404)
+        return failure("Post not found in conversation", 404, outcome="not_applied")
     if not content.lstrip().startswith(f"@{username}"):
         content = f"@{username} {content}"
-    return client.post_reply(post_id, content)
+    return {"ok": True, "data": {"content": content}}
 
 
 def source_hash(data: dict) -> str:
@@ -140,6 +141,18 @@ class Identity:
     blog: str
 
 
+@dataclass(frozen=True)
+class _ClaimedWrite:
+    """A write whose operation ID is durably claimed and must now be finished."""
+
+    scope: str
+    identity: dict
+    arguments: dict
+    target: str | None
+    media: tuple[dict, bytes] | None
+    reply_content: str | None
+
+
 class MicroblogService:
     """One immutable account/destination; caller supplies a mocked client in tests."""
 
@@ -152,6 +165,7 @@ class MicroblogService:
         state_path: Path,
         read_only: bool = False,
         media_root: Path | None = None,
+        local_files: bool = False,
     ):
         self.client = client
         self.profile = profile
@@ -160,6 +174,8 @@ class MicroblogService:
         self.state = StateStore(state_path)
         self.read_only = read_only
         self.media_root = media_root
+        # The CLI may read any path its user names; MCP stays inside --media-root.
+        self.local_files = local_files
         self._identity: Identity | None = None
         self._blog_urls: tuple[str, ...] = ()
         self._receipts: dict[str, dict] = {}
@@ -187,7 +203,11 @@ class MicroblogService:
                     in {u.rstrip("/") for u in self._destination_urls(d, destinations)}
                 ]
                 if len(matches) != 1:
-                    return failure("Blog must resolve to exactly one available destination", 400)
+                    return failure(
+                        "Blog must resolve to exactly one available destination; "
+                        "run: mb blogs to list them",
+                        400,
+                    )
                 blog = matches[0]["uid"]
             else:
                 default = account["data"].get("default_site", "")
@@ -197,7 +217,10 @@ class MicroblogService:
                 ]
                 if not matches:
                     if len(destinations) != 1:
-                        return failure("Choose an explicit --blog destination", 400)
+                        return failure(
+                            "Choose an explicit --blog destination (run: mb blogs to list them)",
+                            400,
+                        )
                     matches = destinations
                 blog = matches[0]["uid"]
             endpoint = configuration["data"].get("media-endpoint")
@@ -510,7 +533,7 @@ class MicroblogService:
             return {
                 "ok": True,
                 "data": self.state.acknowledge(
-                    record["scope"], record["value"], record["revision"], native=True
+                    record["scope"], record["value"], record["revision"]
                 ),
             }
         except CheckpointReviewRequired as exc:
@@ -637,8 +660,16 @@ class MicroblogService:
             result["data"]["dry_run"] = True
         return result
 
+    def load_media(self, file: str) -> tuple[dict, bytes]:
+        """Read an image exactly as stored; raises ImageInputError."""
+        from mb.media import load_image, load_local_image
+
+        if self.local_files and self.media_root is None:
+            return load_local_image(file)
+        return load_image(self.media_root, file)
+
     def media_preview(self, file: str, alt: str) -> dict:
-        from mb.media import ImageInputError, load_image
+        from mb.media import ImageInputError
 
         if not alt.strip():
             return failure("Provide descriptive alt text for the image")
@@ -646,15 +677,39 @@ class MicroblogService:
         if not identity["ok"]:
             return identity
         try:
-            metadata, _ = load_image(self.media_root, file)
+            metadata, _ = self.load_media(file)
         except ImageInputError as exc:
             return failure(str(exc))
         return {
             "ok": True,
-            "data": {**metadata, "alt": alt, "identity": identity["data"], "dry_run": True},
+            "data": {
+                **metadata,
+                "alt": alt,
+                "destination": identity["data"].get("blog"),
+                "identity": identity["data"],
+                "dry_run": True,
+            },
         }
 
     def write(self, action: str, operation_id: str, arguments: dict) -> dict:
+        try:
+            prepared = self._prepare_write(action, operation_id, arguments)
+        except Exception:
+            # Nothing was claimed or sent, so the ID stays unused and needs no recovery.
+            # Never expose exception details.
+            return failure(
+                "Write was not started; inspect configuration or local state",
+                503,
+                outcome="not_applied",
+            )
+        if isinstance(prepared, dict):
+            return prepared
+        return self._dispatch_claimed(action, operation_id, prepared)
+
+    def _prepare_write(
+        self, action: str, operation_id: str, arguments: dict
+    ) -> "dict | _ClaimedWrite":
+        """Validate, read and claim. Every failure here leaves nothing to recover."""
         if self.read_only:
             return failure("Server is read-only", 403, outcome="not_applied")
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", operation_id):
@@ -664,10 +719,12 @@ class MicroblogService:
                 "reuse both on retries. Never generate a fresh ID to retry an uncertain write.",
                 outcome="not_applied",
             )
-        if action == "media_upload" and not re.fullmatch(
-            r"[a-f0-9]{64}", arguments.get("sha256", "")
-        ):
-            return failure("Upload requires the sha256 from a reviewed media_preview")
+        if action == "media_upload":
+            supplied = arguments.get("sha256") or ""
+            if supplied and not re.fullmatch(r"[a-f0-9]{64}", supplied):
+                return failure("sha256 must be 64 lowercase hexadecimal characters")
+            if not supplied and not self.local_files:
+                return failure("Upload requires the sha256 from a reviewed media_preview")
         if action == "post_publish" and not re.fullmatch(
             r"[a-f0-9]{64}", arguments.get("source_hash", "")
         ):
@@ -684,6 +741,13 @@ class MicroblogService:
             arguments.get(k) is not None for k in ("content", "title", "categories")
         ):
             return failure("Nothing to update")
+        if (
+            action == "post_edit"
+            and arguments.get("content") is not None
+            and not arguments["content"].strip()
+        ):
+            # Title- and category-only edits omit content; an empty body is never intended.
+            return failure("Content is empty", outcome="not_applied")
         if action == "post_reply" and not arguments["content"].strip():
             return failure("Content is empty")
         scope = self._reply_scope() if action == "post_reply" else self._scope()
@@ -696,15 +760,15 @@ class MicroblogService:
             return previous
         media = None
         if action == "media_upload":
-            from mb.media import ImageInputError, load_image
+            from mb.media import ImageInputError
 
             if not arguments["alt"].strip():
                 return failure("Provide descriptive alt text for the image")
             try:
-                metadata, content = load_image(self.media_root, arguments["file"])
+                metadata, content = self.load_media(arguments["file"])
             except ImageInputError as exc:
                 return failure(str(exc), outcome="not_applied")
-            if metadata["sha256"] != arguments["sha256"]:
+            if arguments.get("sha256") and metadata["sha256"] != arguments["sha256"]:
                 return failure(
                     "Image changed since preview; review it again", 409, outcome="not_applied"
                 )
@@ -729,55 +793,83 @@ class MicroblogService:
                         409,
                         outcome="not_applied",
                     )
+        reply = None
+        if action == "post_reply":
+            # The recipient read happens before the claim so a failed read never
+            # consumes the operation ID; only the reply itself runs after it.
+            reply = reply_content(self.client, int(arguments["post_id"]), arguments["content"])
+            if not reply["ok"]:
+                return reply
         try:
             previous = self.state.claim(scope, operation_id, fingerprint)
         except StateConflict as exc:
             return failure(str(exc), 409)
         if previous is not None:
             return previous
-        try:
-            if action == "media_upload":
-                assert media is not None
-                metadata, content = media
-                result = self.client.micropub_upload_bytes(
-                    metadata["filename"], content, content_type=metadata["mime_type"]
-                )
-                if result["ok"]:
-                    result = {
-                        **result,
-                        "data": {
-                            **result["data"],
-                            **metadata,
-                            "alt": arguments["alt"],
-                            "identity": identity["data"],
-                        },
-                    }
-            elif action == "post_create":
-                result = create_post(self.client, **arguments)
-            elif action == "post_reply":
-                result = reply_post(self.client, int(arguments["post_id"]), arguments["content"])
-            elif action == "post_edit":
-                assert target is not None
-                result = self.client.micropub_update(
-                    target, **{k: v for k, v in arguments.items() if k != "identifier"}
-                )
-            elif action == "post_publish":
-                assert target is not None
-                result = self.client.micropub_publish(target)
-            elif action == "post_delete":
-                assert target is not None
-                result = self.client.micropub_delete(target)
-            else:
-                result = failure("Unknown write operation")
-        except Exception:
-            self.state.finish(
-                scope,
-                operation_id,
-                failure("write_outcome_unknown", 409, outcome="unknown", operation_id=operation_id),
+        return _ClaimedWrite(
+            scope=scope,
+            identity=identity["data"],
+            arguments=arguments,
+            target=target,
+            media=media,
+            reply_content=reply["data"]["content"] if reply else None,
+        )
+
+    def _send(self, action: str, claimed: "_ClaimedWrite") -> dict:
+        arguments, target = claimed.arguments, claimed.target
+        if action == "media_upload":
+            assert claimed.media is not None
+            metadata, content = claimed.media
+            result = self.client.micropub_upload_bytes(
+                metadata["filename"], content, content_type=metadata["mime_type"]
             )
-            return failure(
+            if result["ok"]:
+                result = {
+                    **result,
+                    "data": {
+                        **result["data"],
+                        **metadata,
+                        "alt": arguments["alt"],
+                        "identity": claimed.identity,
+                    },
+                }
+            return result
+        if action == "post_create":
+            return create_post(self.client, **arguments)
+        if action == "post_reply":
+            assert claimed.reply_content is not None
+            return self.client.post_reply(int(arguments["post_id"]), claimed.reply_content)
+        if action == "post_edit":
+            assert target is not None
+            return self.client.micropub_update(
+                target, **{k: v for k, v in arguments.items() if k != "identifier"}
+            )
+        if action == "post_publish":
+            assert target is not None
+            return self.client.micropub_publish(target)
+        if action == "post_delete":
+            assert target is not None
+            return self.client.micropub_delete(target)
+        return failure("Unknown write operation")
+
+    def _dispatch_claimed(self, action: str, operation_id: str, claimed: "_ClaimedWrite") -> dict:
+        scope, target = claimed.scope, claimed.target
+        try:
+            result = self._send(action, claimed)
+        except BaseException as exc:
+            # Interrupts, exits and cancellation must not strand a pending claim that
+            # blocks every later write in this scope. The request may have landed.
+            unknown = failure(
                 "write_outcome_unknown", 409, outcome="unknown", operation_id=operation_id
             )
+            try:
+                self.state.finish(scope, operation_id, unknown)
+            except Exception:
+                if isinstance(exc, Exception):
+                    raise
+            if not isinstance(exc, Exception):
+                raise
+            return unknown
         if result["ok"] and target is not None:
             result = {**result, "data": {**result.get("data", {}), "url": target}}
         result = {
@@ -806,7 +898,7 @@ class MicroblogService:
         stored["data"] = {
             k: str(v)
             for k, v in result.get("data", {}).items()
-            if k in {"url", "id", "sha256", "upload_sha256", "mime_type", "upload_status"}
+            if k in {"url", "id", "sha256", "mime_type", "upload_status"}
             and isinstance(v, (str, int))
             and not isinstance(v, bool)
             and not (isinstance(token, str) and token and token in str(v))
@@ -853,3 +945,74 @@ class MicroblogService:
                 operation_id=operation_id,
             )
         return found[0] if found else failure("Operation not found", 404)
+
+    def resolve_operation(
+        self,
+        operation_id: str,
+        outcome: str,
+        scope: str | None = None,
+        note: str | None = None,
+        resolved_by: str = "cli",
+    ) -> dict:
+        """Record a human's checked answer for a pending or unknown write; never dispatches."""
+        if self.read_only:
+            return failure("Server is read-only", 403)
+        if outcome not in {"applied", "not_applied"}:
+            return failure("Resolve with applied or not_applied")
+        identity = self.identity()
+        if not identity["ok"]:
+            return identity
+        if scope not in {None, "blog", "reply"}:
+            return failure("Use blog or reply receipt scope")
+        keys = {
+            name: key
+            for name, key in {"blog": self._scope(), "reply": self._reply_scope()}.items()
+            if (scope is None or name == scope) and self.state.operation(key, operation_id)
+        }
+        if len(keys) > 1:
+            return failure(
+                "Operation ID exists in blog and reply scopes; select a scope",
+                409,
+                reason="ambiguous_operation",
+                operation_id=operation_id,
+            )
+        if not keys:
+            return failure("Operation not found", 404)
+        name, key = next(iter(keys.items()))
+        try:
+            receipt = self.state.resolve(
+                key,
+                operation_id,
+                outcome,
+                resolved_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                resolved_by=resolved_by,
+                note=note,
+            )
+        except StateConflict as exc:
+            current = self.state.operation(key, operation_id) or {}
+            return failure(
+                str(exc),
+                409,
+                reason="not_resolvable",
+                operation_id=operation_id,
+                outcome=current.get("outcome"),
+                receipt_scope=name,
+            )
+        if receipt is None:
+            return failure("Operation not found", 404)
+        resolution = receipt["resolution"]
+        return {
+            "ok": True,
+            "operation_id": operation_id,
+            "outcome": outcome,
+            "data": {
+                "kind": "operation_resolution",
+                "operation_id": operation_id,
+                "receipt_scope": name,
+                "outcome": outcome,
+                "previous_status": resolution["previous_status"],
+                "resolved_at": resolution["resolved_at"],
+                "resolved_by": resolution["resolved_by"],
+                "note": note,
+            },
+        }

@@ -26,7 +26,7 @@ def _read_usernames_from_stdin() -> list[str]:
     usernames = []
     for line in sys.stdin:
         line = line.strip()
-        if not line:
+        if not line or line.startswith("#"):
             continue
         usernames.append(_normalize_username(line))
     return usernames

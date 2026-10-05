@@ -7,7 +7,14 @@ from concurrent.futures import ThreadPoolExecutor
 import typer
 
 from mb.api import MicroblogClient
-from mb.commands import add_content_text, extract_post_id, get_client, get_format, output_or_exit
+from mb.commands import (
+    add_content_text,
+    extract_post_id,
+    get_client,
+    get_format,
+    get_service,
+    output_or_exit,
+)
 from mb.commands.user import _days_since, _normalize_username, _read_usernames_from_stdin
 from mb.formatters import strip_html
 
@@ -55,7 +62,7 @@ def _read_post_identifiers_from_stdin() -> list[str]:
     identifiers = []
     for line in sys.stdin:
         line = line.strip()
-        if not line:
+        if not line or line.startswith("#"):
             continue
         normalized = _normalize_post_identifier(line)
         if extract_post_id(normalized) is not None or normalized.startswith(
@@ -188,10 +195,16 @@ def _lookup_post_record(client: MicroblogClient, identifier: str) -> dict:
 
 
 def _fetch_post_lookup(
-    token: str, base_url: str, identifier: str, include_post: bool, include_conversation: bool
+    token: str,
+    base_url: str,
+    identifier: str,
+    include_post: bool,
+    include_conversation: bool,
+    destination: str | None = None,
 ) -> dict:
     """Fetch lookup data for one post."""
     client = MicroblogClient(token=token, base_url=base_url)
+    client.default_destination = destination
     try:
         if include_conversation and identifier.startswith(("http://", "https://")):
             from mb.services import read_conversation
@@ -320,7 +333,7 @@ def users(
                 }
             )
 
-    output_or_exit(
+    output(
         {
             "ok": True,
             "data": {
@@ -334,6 +347,9 @@ def users(
         },
         fmt,
     )
+    if errors:
+        # Partial results stay on stdout; a failed lookup still fails the pipeline.
+        raise SystemExit(1)
 
 
 @app.command("posts")
@@ -378,6 +394,13 @@ def posts(
         raise SystemExit(1)
 
     client = get_client(ctx)
+    destination = None
+    if not conversation and any(i.startswith(("http://", "https://")) for i in resolved):
+        # URL lookups read Micropub source: send the verified destination UID only.
+        identity = get_service(ctx, client).identity()
+        if not identity["ok"]:
+            output_or_exit(identity, fmt)
+        destination = identity["data"]["blog"]
     workers = min(concurrency, len(resolved))
     results_by_identifier = {}
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -389,6 +412,7 @@ def posts(
                 identifier,
                 post,
                 conversation,
+                destination,
             ): identifier
             for identifier in resolved
         }
@@ -425,7 +449,7 @@ def posts(
                 }
             )
 
-    output_or_exit(
+    output(
         {
             "ok": True,
             "data": {
@@ -440,3 +464,5 @@ def posts(
         },
         fmt,
     )
+    if errors:
+        raise SystemExit(1)

@@ -2,7 +2,8 @@
 
 import json
 import os
-import stat
+import re
+import secrets
 import tomllib
 from pathlib import Path
 
@@ -10,17 +11,36 @@ CONFIG_DIR = Path.home() / ".config" / "mb"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 
 DEFAULT_PROFILE = "default"
+NAME_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
+
+
+class ConfigError(ValueError):
+    """A config input or file problem, reported as a structured error; never holds a token."""
+
+
+def validate_name(kind: str, name: str) -> str:
+    """Profile and checkpoint names become TOML sections and keys, so keep them plain."""
+    if not isinstance(name, str) or not NAME_PATTERN.fullmatch(name):
+        raise ConfigError(
+            f"Invalid {kind} name {json.dumps(name)}: use only letters, digits, _ and -"
+        )
+    return name
 
 
 def _load_config_file() -> dict:
     if not CONFIG_FILE.exists():
         return {}
-    with open(CONFIG_FILE, "rb") as f:
-        return tomllib.load(f)
+    try:
+        with open(CONFIG_FILE, "rb") as f:
+            return tomllib.load(f)
+    except tomllib.TOMLDecodeError as exc:
+        # The decoder message names the line and column, never the file contents.
+        raise ConfigError(f"Config file {CONFIG_FILE} is not valid TOML: {exc}") from None
 
 
 def _get_profile(config: dict, profile: str) -> dict:
     """Resolve a profile from config. Supports both flat (legacy) and sectioned formats."""
+    validate_name("profile", profile)
     # New format: profiles are TOML sections
     if profile in config and isinstance(config[profile], dict):
         return config[profile]
@@ -91,6 +111,7 @@ def save_checkpoint(checkpoint_id: int, profile: str = DEFAULT_PROFILE) -> None:
 
 def get_named_checkpoint(name: str, profile: str = DEFAULT_PROFILE) -> int | None:
     """Return a named checkpoint ID from the config file profile."""
+    validate_name("checkpoint", name)
     key = "checkpoint" if name == "timeline" else f"{name}_checkpoint"
     val = _get_profile(_load_config_file(), profile).get(key)
     return int(val) if val is not None else None
@@ -110,7 +131,8 @@ def list_named_checkpoints(profile: str = DEFAULT_PROFILE) -> dict[str, int]:
 
 def save_named_checkpoint(name: str, checkpoint_id: int, profile: str = DEFAULT_PROFILE) -> None:
     """Save a named checkpoint ID to the config file profile."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    validate_name("checkpoint", name)
+    validate_name("profile", profile)
     config = _load_config_file()
 
     # Migrate legacy flat format if needed
@@ -128,6 +150,7 @@ def save_named_checkpoint(name: str, checkpoint_id: int, profile: str = DEFAULT_
 
 def clear_named_checkpoint(name: str, profile: str = DEFAULT_PROFILE) -> bool:
     """Remove one named checkpoint from the config file profile."""
+    validate_name("checkpoint", name)
     config = _load_config_file()
     profile_data = _get_profile(config, profile)
     if not profile_data:
@@ -158,7 +181,7 @@ def save_config(
     token: str, username: str | None = None, blog: str | None = None, profile: str = DEFAULT_PROFILE
 ) -> None:
     """Write token (and optional username/blog) to a profile in config file."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    validate_name("profile", profile)
     config = _load_config_file()
 
     # Migrate legacy flat format if saving to a non-default profile
@@ -195,6 +218,16 @@ def _write_config(config: dict) -> None:
             for key, value in section.items():
                 lines.append(f"{key} = {json.dumps(value)}")
             lines.append("")
-    CONFIG_FILE.write_text("\n".join(lines) + "\n")
-    # Restrict permissions — token is sensitive
-    CONFIG_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
+    # The token is sensitive: write a private file beside the config, then swap it in,
+    # so the config is never briefly world-readable or left truncated by a crash.
+    temporary = CONFIG_DIR / f".{CONFIG_FILE.name}.{secrets.token_hex(8)}.tmp"
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write("\n".join(lines) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, CONFIG_FILE)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise

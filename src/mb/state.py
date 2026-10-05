@@ -105,38 +105,55 @@ class StateStore:
         with closing(sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True)) as db:
             return self._cursor_record(db, scope)
 
-    def acknowledge(
-        self, scope: str, value: str, expected_revision: int, *, native: bool = False
-    ) -> dict:
-        if native and (
-            not re.fullmatch(r"[0-9]{1,20}", value) or int(value) <= 0 or value != str(int(value))
-        ):
+    def summary(self) -> dict:
+        """Read-only overview for diagnostics: unresolved receipts and checkpoint schemes.
+
+        Never creates, migrates or locks the file; a missing file reads as empty.
+        """
+        if not self.path.exists():
+            return {"operations": [], "cursors": []}
+        with closing(sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True)) as db:
+            tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            operations = (
+                [
+                    {"scope": scope, "id": identifier, "status": status}
+                    for scope, identifier, status in db.execute(
+                        "SELECT scope,id,status FROM operations "
+                        "WHERE status IN ('pending','unknown') ORDER BY rowid"
+                    )
+                ]
+                if "operations" in tables
+                else []
+            )
+            scopes: set[str] = set()
+            for table in ("cursors", "cursor_provenance"):
+                if table in tables:
+                    scopes.update(r[0] for r in db.execute(f"SELECT scope FROM {table}"))
+            cursors = [{"scope": s, **self._cursor_record(db, s)} for s in sorted(scopes)]
+        return {"operations": operations, "cursors": cursors}
+
+    def acknowledge(self, scope: str, value: str, expected_revision: int) -> dict:
+        """Save a native-order checkpoint from a complete window, with its provenance."""
+        if not re.fullmatch(r"[0-9]{1,20}", value) or int(value) <= 0 or value != str(int(value)):
             raise StateConflict("Invalid native checkpoint")
         with self.connection() as db:
             record = self._cursor_record(db, scope)
             current, revision = record["value"], record["revision"]
-            if native and record["scheme"] == LEGACY_CURSOR:
+            if record["scheme"] == LEGACY_CURSOR:
                 raise CheckpointReviewRequired(
                     "Checkpoint requires operator review; no automatic migration"
                 )
             if revision != expected_revision:
                 if current == value and revision == expected_revision + 1:
-                    if not native:
-                        db.execute("DELETE FROM cursor_provenance WHERE scope=?", (scope,))
                     return {"checkpoint": value, "revision": revision, "already_applied": True}
                 raise StateConflict("Checkpoint changed; read a fresh window before acknowledging")
-            if not native and current is not None and int(value) < int(current):
-                raise StateConflict("Checkpoint cannot move backwards")
             db.execute(
                 "INSERT OR REPLACE INTO cursors VALUES (?,?,?)", (scope, value, revision + 1)
             )
-            if native:
-                db.execute(
-                    "INSERT OR REPLACE INTO cursor_provenance VALUES (?,?,?,?)",
-                    (scope, value, revision + 1, NATIVE_CURSOR),
-                )
-            else:
-                db.execute("DELETE FROM cursor_provenance WHERE scope=?", (scope,))
+            db.execute(
+                "INSERT OR REPLACE INTO cursor_provenance VALUES (?,?,?,?)",
+                (scope, value, revision + 1, NATIVE_CURSOR),
+            )
             return {"checkpoint": value, "revision": revision + 1, "already_applied": False}
 
     @staticmethod
@@ -230,6 +247,19 @@ class StateStore:
 
     def finish(self, scope: str, operation_id: str, result: dict) -> None:
         with self.connection() as db:
+            row = db.execute(
+                "SELECT status,result FROM operations WHERE scope=? AND id=?",
+                (scope, operation_id),
+            ).fetchone()
+            if row and row[0] == "resolved":
+                # A human resolution stands; keep the late dispatch result beside it for review.
+                resolved = json.loads(row[1])
+                resolved["resolution"]["late_receipt"] = result
+                db.execute(
+                    "UPDATE operations SET result=? WHERE scope=? AND id=?",
+                    (json.dumps(resolved), scope, operation_id),
+                )
+                return
             db.execute(
                 "UPDATE operations SET status=?,result=? WHERE scope=? AND id=?",
                 (
@@ -239,3 +269,51 @@ class StateStore:
                     operation_id,
                 ),
             )
+
+    def resolve(
+        self,
+        scope: str,
+        operation_id: str,
+        outcome: str,
+        *,
+        resolved_at: str,
+        resolved_by: str,
+        note: str | None = None,
+    ) -> dict | None:
+        """Record a human answer for a pending or unknown receipt, keeping what it replaced."""
+        if outcome not in {"applied", "not_applied"}:
+            raise ValueError("Resolve with applied or not_applied")
+        if self._operation_row(scope, operation_id) is None:
+            return None
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT status,result FROM operations WHERE scope=? AND id=?",
+                (scope, operation_id),
+            ).fetchone()
+            if row is None:
+                return None
+            if row[0] not in {"pending", "unknown"}:
+                raise StateConflict("Only pending or unknown receipts can be resolved")
+            previous = json.loads(row[1]) if row[1] else None
+            receipt = {
+                "ok": outcome == "applied",
+                "operation_id": operation_id,
+                "outcome": outcome,
+                "data": (previous or {}).get("data", {}),
+                "resolution": {
+                    "outcome": outcome,
+                    "resolved_at": resolved_at,
+                    "resolved_by": resolved_by,
+                    "note": note,
+                    "previous_status": row[0],
+                    "previous_receipt": previous,
+                },
+            }
+            if outcome == "not_applied":
+                receipt.update(error="write_not_applied", code=409)
+            # The resolved status no longer blocks new claims in this scope.
+            db.execute(
+                "UPDATE operations SET status='resolved',result=? WHERE scope=? AND id=?",
+                (json.dumps(receipt), scope, operation_id),
+            )
+        return receipt

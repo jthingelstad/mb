@@ -15,6 +15,7 @@ from mb.state import (
     StateConflict,
     StateStore,
 )
+from tests.conftest import write_legacy_cursor
 from tests.test_mcp_exercise import service_at
 
 
@@ -71,7 +72,7 @@ def test_native_order_across_capped_pages_and_smaller_new_anchor(tmp_path, ids):
 def test_native_since_does_not_drop_low_ids(tmp_path):
     service, client = service_at(tmp_path)
     service.identity()
-    service.state.acknowledge(service._scope("catchup"), "100", 0, native=True)
+    service.state.acknowledge(service._scope("catchup"), "100", 0)
     native_feed(client, [90, 110, 100, 200], cap=1)
     seen, data = consume(service, count=4)
     assert seen == ["90", "110"]
@@ -85,7 +86,7 @@ def test_native_since_does_not_drop_low_ids(tmp_path):
 def test_inbox_requires_exact_anchor_with_nonmonotonic_ids(tmp_path, raw, expected, complete):
     service, client = service_at(tmp_path)
     service.identity()
-    service.state.acknowledge(service._scope("inbox"), "100", 0, native=True)
+    service.state.acknowledge(service._scope("inbox"), "100", 0)
     client.get_mentions.return_value = {"ok": True, "data": {"items": [{"id": i} for i in raw]}}
     seen, data = consume(service, count=1, workflow="inbox")
     assert seen == [str(i) for i in expected]
@@ -98,7 +99,7 @@ def test_inbox_requires_exact_anchor_with_nonmonotonic_ids(tmp_path, raw, expect
 def test_exact_timeline_anchor_stops_before_older_history(tmp_path):
     service, client = service_at(tmp_path)
     service.identity()
-    service.state.acknowledge(service._scope("catchup"), "100", 0, native=True)
+    service.state.acknowledge(service._scope("catchup"), "100", 0)
     client.get_timeline.side_effect = [
         {"ok": True, "data": {"items": [{"id": 90}, {"id": 110}]}},
         {"ok": True, "data": {"items": [{"id": 80}, {"id": 100}, {"id": 999}]}},
@@ -140,12 +141,12 @@ def test_cursor_retries_do_not_mutate_seen_set_of_previous_branch(tmp_path):
 
 def test_concurrent_identical_native_acks_change_revision_once(tmp_path):
     store = StateStore(tmp_path / "state.sqlite")
-    store.acknowledge("scope", "100", 0, native=True)
+    store.acknowledge("scope", "100", 0)
     barrier = Barrier(2)
 
     def acknowledge():
         barrier.wait(timeout=5)
-        return StateStore(store.path).acknowledge("scope", "90", 1, native=True)
+        return StateStore(store.path).acknowledge("scope", "90", 1)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         rows = list(pool.map(lambda _: acknowledge(), range(2)))
@@ -155,13 +156,13 @@ def test_concurrent_identical_native_acks_change_revision_once(tmp_path):
 
 def test_concurrent_different_native_acks_reject_stale_receipt(tmp_path):
     store = StateStore(tmp_path / "state.sqlite")
-    store.acknowledge("scope", "100", 0, native=True)
+    store.acknowledge("scope", "100", 0)
     barrier = Barrier(2)
 
     def acknowledge(value):
         barrier.wait(timeout=5)
         try:
-            return StateStore(store.path).acknowledge("scope", value, 1, native=True)
+            return StateStore(store.path).acknowledge("scope", value, 1)
         except StateConflict:
             return None
 
@@ -198,8 +199,8 @@ def test_mixed_legacy_native_and_new_consumer_state(tmp_path):
     service, client = service_at(tmp_path)
     service.identity()
     store = service.state
-    store.acknowledge(service._scope("inbox"), "100", 0)
-    store.acknowledge(service._scope("catchup"), "100", 0, native=True)
+    write_legacy_cursor(store, service._scope("inbox"), "100")
+    store.acknowledge(service._scope("catchup"), "100", 0)
     client.get_mentions.return_value = {"ok": True, "data": {"items": [{"id": 90}, {"id": 100}]}}
     assert not service.attention("inbox")["data"]["coverage_complete"]
     native_feed(client, [90, 100])
@@ -214,20 +215,20 @@ def test_mixed_legacy_native_and_new_consumer_state(tmp_path):
 
 
 @pytest.mark.parametrize("replay", [False, True])
-def test_legacy_ack_invalidates_provenance_even_on_successful_replay(tmp_path, replay):
+def test_legacy_write_invalidates_native_provenance(tmp_path, replay):
     store = StateStore(tmp_path / "state.sqlite")
-    store.acknowledge("scope", "100", 0, native=True)
-    store.acknowledge("scope", "100" if replay else "110", 0 if replay else 1)
+    store.acknowledge("scope", "100", 0)
+    write_legacy_cursor(store, "scope", "100" if replay else "110")
     assert store.cursor_record("scope")["scheme"] == LEGACY_CURSOR
     with pytest.raises(CheckpointReviewRequired):
-        store.acknowledge("scope", "100" if replay else "110", 0 if replay else 1, native=True)
+        store.acknowledge("scope", "120", 2)
 
 
 def test_rc2_style_write_between_read_and_ack_cannot_promote_legacy(tmp_path):
     service, client = service_at(tmp_path)
     service.identity()
     scope = service._scope("catchup")
-    service.state.acknowledge(scope, "100", 0, native=True)
+    service.state.acknowledge(scope, "100", 0)
     native_feed(client, [90, 100])
     _, data = consume(service)
     # Old clients know only the original cursor table and leave stale provenance.
@@ -243,7 +244,7 @@ def test_mismatched_and_orphan_provenance_require_review(tmp_path, orphan):
     service, client = service_at(tmp_path)
     service.identity()
     scope = service._scope("heartbeat")
-    service.state.acknowledge(scope, "100", 0, native=True)
+    service.state.acknowledge(scope, "100", 0)
     with closing(sqlite3.connect(service.state.path)) as db, db:
         db.execute(
             "DELETE FROM cursors WHERE scope=?"
@@ -256,7 +257,7 @@ def test_mismatched_and_orphan_provenance_require_review(tmp_path, orphan):
     assert data["mode"] == "checkpoint-review-required" and data["checkpoint_review_required"]
     assert not data["coverage_complete"] and data["ack_receipt"] is None
     with pytest.raises(CheckpointReviewRequired):
-        service.state.acknowledge(scope, "90", data["revision"], native=True)
+        service.state.acknowledge(scope, "90", data["revision"])
 
 
 def test_null_revision_in_malformed_legacy_schema_is_not_bootstrap(tmp_path):
@@ -297,7 +298,7 @@ def test_handles_and_provenance_bind_verified_scope(tmp_path, scope_change):
 def test_native_state_requires_canonical_id(value, tmp_path):
     store = StateStore(tmp_path / "state.sqlite")
     with pytest.raises(StateConflict):
-        store.acknowledge("scope", value, 0, native=True)
+        store.acknowledge("scope", value, 0)
     assert not store.path.exists()
 
 
@@ -313,4 +314,4 @@ def test_nullable_scheme_orphan_provenance_is_not_bootstrap(tmp_path, cursor_tab
         db.execute("INSERT INTO cursor_provenance VALUES ('scope','100',1,NULL)")
     assert store.cursor_record("scope")["scheme"] == LEGACY_CURSOR
     with pytest.raises(CheckpointReviewRequired):
-        store.acknowledge("scope", "90", 0, native=True)
+        store.acknowledge("scope", "90", 0)

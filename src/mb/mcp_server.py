@@ -78,7 +78,7 @@ class Reply(Input):
 
 
 class Edit(PostGet):
-    content: str | None = None
+    content: Annotated[str, Field(min_length=1, max_length=100000)] | None = None
     title: str | None = None
     categories: list[str] | None = None
     operation_id: OperationID
@@ -132,6 +132,64 @@ class Operation(Input):
     scope: Literal["blog", "reply"] | None = None
 
 
+RESOURCE_TYPES = {
+    "guide": "text/markdown",
+    "identity": "application/json",
+    "discover-collections": "application/json",
+}
+
+_TYPE_WORDS = {
+    "int_type": "an integer",
+    "bool_type": "a boolean",
+    "string_type": "a string",
+    "list_type": "a list",
+}
+
+
+def _field_limits(model: type[Input], field: str) -> dict[str, Any]:
+    """Schema limits declared on a field, for messages that never repeat the input."""
+    limits: dict[str, Any] = {}
+    info = model.model_fields.get(field)
+    for constraint in getattr(info, "metadata", []):
+        for name in ("ge", "le", "min_length", "max_length"):
+            if getattr(constraint, name, None) is not None:
+                limits[name] = getattr(constraint, name)
+    return limits
+
+
+def describe_validation_error(model: type[Input], error: Any) -> str:
+    """Name the field and the allowed range or shape; pydantic's own text may echo input."""
+    kind = error["type"]
+    if kind == "extra_forbidden":
+        return "unknown field"
+    field = ".".join(map(str, error["loc"])) or "arguments"
+    limits = {**_field_limits(model, str(error["loc"][0])), **(error.get("ctx") or {})}
+    if kind == "missing":
+        return f"{field} is required"
+    if kind in {"greater_than_equal", "less_than_equal"}:
+        if "ge" in limits and "le" in limits:
+            return f"{field} must be between {limits['ge']} and {limits['le']}"
+        if "ge" in limits:
+            return f"{field} must be at least {limits['ge']}"
+        return f"{field} must be at most {limits['le']}"
+    if kind in {"string_too_short", "string_too_long"}:
+        low, high = limits.get("min_length"), limits.get("max_length")
+        if low is not None and high is not None:
+            return f"{field} must be {low} to {high} characters"
+        if low == 1:
+            return f"{field} must not be empty"
+        if low is not None:
+            return f"{field} must be at least {low} characters"
+        return f"{field} must be at most {high} characters"
+    if kind == "string_pattern_mismatch":
+        return f"{field} does not match the allowed format"
+    if kind == "literal_error":
+        return f"{field} must be {limits.get('expected', 'an allowed value')}"
+    if kind in _TYPE_WORDS:
+        return f"{field} must be {_TYPE_WORDS[kind]}"
+    return f"{field} is invalid"
+
+
 # The catalog is static; listing capabilities never opens authentication or contacts the network.
 CATALOG: dict[str, tuple[type[Input], str]] = {
     "discover": (
@@ -154,7 +212,7 @@ CATALOG: dict[str, tuple[type[Input], str]] = {
     ),
     "media_preview": (
         MediaPreview,
-        "Validate a relative local static image under the explicitly enabled media directory. Show dimensions, upload hash, alt text and selected destination without uploading.",
+        "Check a relative JPEG, PNG, GIF or WebP file under the explicitly enabled media directory. Show file name, type, byte count, sha256, alt text and selected destination without uploading. The bytes are uploaded unchanged, including any embedded metadata.",
     ),
     "media_upload": (
         MediaUpload,
@@ -262,6 +320,10 @@ def redact(value: Any, token: str) -> Any:
     return value
 
 
+class _ClaimedWriteFailed(Exception):
+    """Raised past a durable claim, so the remote outcome is unknown."""
+
+
 def result_block(result: dict) -> types.CallToolResult:
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=json.dumps(result))],
@@ -289,7 +351,11 @@ class Adapter:
                 return identity
             if name in REMOTE_WRITES:
                 operation_id = arguments.pop("operation_id")
-                return service.write(name, operation_id, arguments)
+                try:
+                    return service.write(name, operation_id, arguments)
+                except Exception as exc:
+                    # write() reports pre-claim failures itself; this one followed a claim.
+                    raise _ClaimedWriteFailed from exc
             if name == "checkpoint_ack":
                 return service.acknowledge(**arguments)
             if name == "post_preview":
@@ -309,12 +375,9 @@ class Adapter:
         try:
             arguments = entry[0].model_validate(params.arguments or {}).model_dump()
         except ValidationError as exc:
-            # Validation errors may echo input. Return field locations only.
-            fields = [
-                ".".join(map(str, e["loc"])) if e["type"] != "extra_forbidden" else "unknown field"
-                for e in exc.errors()
-            ]
-            return result_block(failure("Invalid arguments: " + ", ".join(fields)))
+            # Validation errors may echo input. Describe fields and schema limits only.
+            problems = [describe_validation_error(entry[0], e) for e in exc.errors()]
+            return result_block(failure("Invalid arguments: " + "; ".join(problems)))
         try:
             result = await anyio.to_thread.run_sync(
                 lambda: self.invoke(params.name, arguments), limiter=self.limiter
@@ -325,19 +388,20 @@ class Adapter:
                 401,
                 outcome="not_applied",
             )
-        except Exception:
+        except _ClaimedWriteFailed:
             # No tracebacks, request payloads, response bodies or tokens in protocol errors.
             result = failure(
                 "Service unavailable; inspect configuration or local state",
                 503,
-                **(
-                    {
-                        "outcome": "unknown",
-                        "operation_id": (params.arguments or {}).get("operation_id"),
-                    }
-                    if params.name in REMOTE_WRITES
-                    else {}
-                ),
+                outcome="unknown",
+                operation_id=(params.arguments or {}).get("operation_id"),
+            )
+        except Exception:
+            # Failed before any claim, so a write was never started.
+            result = failure(
+                "Service unavailable; inspect configuration or local state",
+                503,
+                **({"outcome": "not_applied"} if params.name in REMOTE_WRITES else {}),
             )
         token = self.service.client.token if self.service is not None else ""
         return result_block(redact(result, token))
@@ -365,7 +429,10 @@ class Adapter:
         return types.ListResourcesResult(
             resources=[
                 types.Resource(
-                    name=name, uri="mb://" + name, mime_type="text/plain", description=description
+                    name=name,
+                    uri="mb://" + name,
+                    mime_type=RESOURCE_TYPES[name],
+                    description=description,
                 )
                 for name, description in {
                     "guide": "Packaged operational and editorial guidance",
@@ -393,7 +460,11 @@ class Adapter:
         else:
             raise ValueError("Unknown resource")
         return types.ReadResourceResult(
-            contents=[types.TextResourceContents(uri=uri, mime_type="text/plain", text=text)]
+            contents=[
+                types.TextResourceContents(
+                    uri=uri, mime_type=RESOURCE_TYPES[uri.removeprefix("mb://")], text=text
+                )
+            ]
         )
 
 

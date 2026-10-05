@@ -1,17 +1,6 @@
 """Tests for blog reading and category commands."""
 
 
-class TestBlogPosts:
-    def test_get_blog_posts(self, mock_client):
-        result = mock_client.get_blog_posts("testuser")
-        assert result["ok"] is True
-        assert "items" in result["data"]
-
-    def test_get_blog_posts_with_category(self, mock_client):
-        result = mock_client.get_blog_posts("testuser", category="journal")
-        assert result["ok"] is True
-
-
 class TestCategories:
     def test_get_categories(self, mock_client):
         result = mock_client.micropub_get_categories()

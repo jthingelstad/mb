@@ -1,6 +1,4 @@
-"""Compatibility spelling for the reviewed, receipt-aware media workflow."""
-
-from pathlib import Path
+"""Compatibility spelling for the receipt-aware media upload."""
 
 import typer
 
@@ -14,15 +12,13 @@ def run(
     sha256: str | None = None,
     operation_id: str | None = None,
 ):
-    """Upload only a reviewed relative image; legacy implicit fetching is removed."""
-    if source.startswith(("http://", "https://")) or Path(source).is_absolute():
+    """Upload one local image unchanged; remote URLs are never fetched."""
+    if source.startswith(("http://", "https://")):
         output_or_exit(
             {
                 "ok": False,
-                "error": "Legacy path/URL upload was removed in 2.0. Save the image under an "
-                "explicit --media-root, run media preview with its relative path and --alt, "
-                "then media upload with the reviewed --sha256. "
-                "MB does not fetch remote images.",
+                "error": "MB does not fetch remote images. Save the image locally, then run "
+                "mb media upload PATH --alt TEXT, or post with --photo-url for a hosted image.",
                 "code": 400,
                 "outcome": "not_applied",
             },

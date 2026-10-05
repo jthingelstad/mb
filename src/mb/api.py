@@ -1,6 +1,5 @@
 """HTTP client for micro.blog. Accepts base_url override for testing."""
 
-from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -231,23 +230,6 @@ class MicroblogClient:
         resp = self._request("GET", "/posts/check", params={"since_id": since_id})
         return self._handle_response(resp)
 
-    def get_blog_posts(self, username: str, count: int = 20, category: str | None = None) -> dict:
-        """Get blog posts. Uses Micropub source for non-default destinations."""
-        if self.default_destination:
-            result = self.micropub_list()
-            if not result["ok"]:
-                return result
-            items = result["data"].get("items", [])
-            normalized = self._normalize_micropub_items(items, owner=username)
-            if category:
-                normalized = [i for i in normalized if category in i.get("tags", [])]
-            return {"ok": True, "data": {"items": normalized[:count]}}
-        params: dict = {"count": count}
-        if category:
-            params["category"] = category
-        resp = self._request("GET", f"/posts/{username}", params=params)
-        return self._handle_response(resp)
-
     def search_blog(self, username: str, query: str, category: str | None = None) -> dict:
         """Server-side search of selected blog source, as used by the official client."""
         if not self.default_destination:
@@ -333,11 +315,9 @@ class MicroblogClient:
         content: str,
         title: str | None = None,
         draft: bool = False,
-        reply_to: str | None = None,
         photo_url: str | None = None,
         photo_alt: str | None = None,
         categories: list[str] | None = None,
-        mp_destination: str | None = None,
     ) -> dict:
         """Create a new post via Micropub."""
         data: dict = {
@@ -348,17 +328,14 @@ class MicroblogClient:
             data["name"] = title
         if draft:
             data["post-status"] = "draft"
-        if reply_to:
-            data["in-reply-to"] = reply_to
         if photo_url:
             data["photo"] = photo_url
             if photo_alt is not None:
                 data["mp-photo-alt"] = photo_alt
         if categories:
             data["category[]"] = categories
-        destination = mp_destination or self.default_destination
-        if destination:
-            data["mp-destination"] = destination
+        if self.default_destination:
+            data["mp-destination"] = self.default_destination
         resp = self._request("POST", "/micropub", data=data)
         return self._handle_micropub_response(resp, require_location=True)
 
@@ -384,12 +361,7 @@ class MicroblogClient:
             replace["name"] = [title]
         if categories is not None:
             replace["category"] = categories
-        if not replace:
-            return {
-                "ok": False,
-                "error": "Nothing to update — provide --content, --title, or --category",
-                "code": 400,
-            }
+        # Callers (the shared service) refuse an empty update before claiming it.
         data["replace"] = replace
         resp = self._request("POST", "/micropub", json=data)
         return self._handle_micropub_response(resp)
@@ -480,19 +452,6 @@ class MicroblogClient:
             )
         return result
 
-    def micropub_upload_photo(self, filepath: str, alt: str | None = None) -> dict:
-        """Upload a photo to the media endpoint, return its URL."""
-        from mb.media import ImageInputError, load_image
-
-        path = Path(filepath).absolute()
-        try:
-            metadata, content = load_image(path.parent, path.name)
-        except ImageInputError as exc:
-            return {"ok": False, "error": str(exc), "code": 400}
-        return self.micropub_upload_bytes(
-            metadata["filename"], content, alt=alt, content_type=metadata["mime_type"]
-        )
-
     def _handle_micropub_response(
         self, resp: httpx.Response, *, require_location: bool = False
     ) -> dict:
@@ -551,8 +510,14 @@ class MicroblogClient:
                 "code": 502,
                 "outcome": "unknown",
             }
-        post_id = location.rstrip("/").split("/")[-1] if location else ""
-        data = {"url": location, "id": post_id}
+        data: dict = {"url": location}
+        # A Location slug such as "hello.html" is not a Micro.blog ID; address posts by URL.
+        # Report an ID only when the response states a numeric one.
+        reported = payload.get("id")
+        if isinstance(reported, int) and not isinstance(reported, bool) and reported > 0:
+            data["id"] = str(reported)
+        elif isinstance(reported, str) and reported.isdigit():
+            data["id"] = reported
         # Draft preview links are returned to the caller, never copied into durable receipts.
         if isinstance(payload.get("preview"), str):
             data["preview"] = payload["preview"]

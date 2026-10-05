@@ -1,6 +1,6 @@
 """Tests for conversation thread building."""
 
-from mb.commands.conversation import _build_thread
+from mb.domain import _build_thread
 
 
 class TestBuildThread:

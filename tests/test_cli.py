@@ -744,6 +744,9 @@ class TestHeartbeat:
         assert data["data"]["timeline"] == []
         assert data["data"]["new_timeline_count"] == 0
         assert [item["id"] for item in data["data"]["mentions"]] == ["20004"]
+        # Mention 20004 is newer than unseen timeline posts; the shared cursor stays put.
+        assert data["data"]["advanced"] is False and data["data"]["latest_id"] == 20004
+        assert "heartbeat_checkpoint = 20002" in config_file.read_text()
 
     def test_heartbeat_default_advance_considers_unsampled_mentions(self, tmp_path):
         config_dir = tmp_path / ".config" / "mb"
@@ -1242,7 +1245,7 @@ class TestUserPipelines:
                 app, ["--format", "json", "lookup", "users", "--last-post", "alice", "bob"]
             )
 
-        assert result.exit_code == 0
+        assert result.exit_code == 1  # Partial results print, but a failed lookup fails.
         data = json.loads(result.output)
         assert [entry["username"] for entry in data["data"]["users"]] == ["alice"]
         assert data["data"]["errors"][0]["username"] == "bob"
@@ -1375,11 +1378,13 @@ class TestTopLevelPipelineAliases:
 
 
 class TestUpload:
-    @pytest.mark.parametrize("source", ["/tmp/otter.jpg", "https://example.com/otter.jpg"])
-    def test_legacy_upload_refused_without_auth_or_network(self, source):
+    @pytest.mark.parametrize(
+        "source", ["https://example.com/otter.jpg", "http://example.com/otter.jpg"]
+    )
+    def test_remote_upload_refused_without_auth_or_network(self, source):
         with patch("mb.config.get_token", side_effect=AssertionError("No credential lookup")):
-            result = runner.invoke(app, ["--format", "json", "upload", source])
+            result = runner.invoke(app, ["--format", "json", "upload", source, "--alt", "Otter"])
         assert result.exit_code == 1
         data = json.loads(result.output)
         assert data["outcome"] == "not_applied"
-        assert "media preview" in data["error"]
+        assert "does not fetch remote images" in data["error"]

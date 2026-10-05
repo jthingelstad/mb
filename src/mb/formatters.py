@@ -4,14 +4,16 @@ import json
 import re
 import sys
 from datetime import datetime, timezone
+from html import unescape
 
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 
 def strip_html(html: str) -> str:
-    """Remove HTML tags from a string."""
-    return re.sub(r"<[^>]+>", "", html)
+    """Remove HTML tags and decode entities such as &amp; and &#8217;."""
+    return unescape(re.sub(r"<[^>]+>", "", html))
 
 
 def _relative_time(timestamp: str) -> str:
@@ -93,6 +95,14 @@ def output_json(data: dict) -> None:
     sys.stdout.write("\n")
 
 
+def _is_write_result(data: dict) -> bool:
+    """A single created/updated resource: an ID, or a URL from a receipt-bearing write."""
+    payload = data.get("data")
+    if not isinstance(payload, dict) or "content_html" in payload:
+        return False
+    return "id" in payload or ("url" in payload and "operation_id" in data)
+
+
 def output_human(data: dict) -> None:
     """Print rich-formatted output for humans."""
     console = Console()
@@ -119,6 +129,42 @@ def output_human(data: dict) -> None:
         if payload.get("identity", {}).get("blog"):
             detail += f" blog={payload['identity']['blog']}"
         print(detail)
+
+    if isinstance(payload, dict) and payload.get("kind") == "doctor":
+        styles = {"ok": "green", "warn": "yellow", "error": "red"}
+        for check in payload.get("checks", []):
+            status = check.get("status", "")
+            style = styles.get(status, "white")
+            console.print(
+                f"[{style}]{status.upper():5}[/{style}] "
+                f"[bold]{escape(check.get('name', ''))}[/bold] {escape(check.get('detail', ''))}",
+                markup=True,
+            )
+            if check.get("hint"):
+                console.print(f"      {check['hint']}", markup=False, style="dim")
+            for command in check.get("commands", []):
+                console.print(f"      {command}", markup=False, soft_wrap=True)
+        counts = payload.get("summary", {})
+        verdict = (
+            "[green]Healthy[/green]" if payload.get("healthy") else "[red]Problems found[/red]"
+        )
+        console.print(
+            f"{verdict}: {counts.get('ok', 0)} ok, {counts.get('warn', 0)} warnings, "
+            f"{counts.get('error', 0)} errors",
+            markup=True,
+        )
+        return
+
+    if isinstance(payload, dict) and payload.get("kind") == "operation_resolution":
+        console.print(
+            f"[green]Resolved[/green] {payload.get('operation_id', '')} as "
+            f"{payload.get('outcome', '')} (was {payload.get('previous_status', '')}, "
+            f"{payload.get('receipt_scope', '')} scope)",
+            markup=True,
+        )
+        if payload.get("note"):
+            console.print(f"  Note: {payload['note']}", markup=False)
+        return
 
     if isinstance(payload, dict) and payload.get("kind") == "upload":
         console.print(f"[green]Uploaded[/green] {payload.get('url', '')}")
@@ -332,9 +378,12 @@ def output_human(data: dict) -> None:
             )
         return
 
-    # Single post
-    if "id" in payload and "url" in payload and "content_html" not in payload:
-        console.print(f"[green]OK[/green] id={payload['id']} url={payload['url']}")
+    # Single write result
+    if _is_write_result(data):
+        detail = f"id={payload['id']} " if payload.get("id") else ""
+        console.print("[green]OK[/green] " + escape(f"{detail}url={payload.get('url', '')}"))
+        if payload.get("preview"):
+            console.print(f"preview={payload['preview']}", markup=False)
         return
 
     # User info
@@ -393,7 +442,33 @@ def output_agent(data: dict) -> None:
             detail += f" truncated={str(payload['truncated']).lower()}"
         if payload.get("identity", {}).get("blog"):
             detail += f" blog={payload['identity']['blog']}"
-        print(detail)
+        # Metadata goes to stderr so stdout stays one line per post for pipes.
+        print(detail, file=sys.stderr)
+
+    if isinstance(payload, dict) and payload.get("kind") == "doctor":
+        for check in payload.get("checks", []):
+            print(f"{check.get('status', '')} {check.get('name', '')}: {check.get('detail', '')}")
+            if check.get("hint"):
+                print(f"  hint: {check['hint']}")
+            for command in check.get("commands", []):
+                print(f"  run: {command}")
+        counts = payload.get("summary", {})
+        print(
+            f"healthy={str(payload.get('healthy', False)).lower()} "
+            f"ok={counts.get('ok', 0)} warn={counts.get('warn', 0)} error={counts.get('error', 0)}"
+        )
+        return
+
+    if isinstance(payload, dict) and payload.get("kind") == "operation_resolution":
+        line = (
+            f"resolved scope={payload.get('receipt_scope', '')} "
+            f"previous={payload.get('previous_status', '')} "
+            f"by={payload.get('resolved_by', '')} at={payload.get('resolved_at', '')}"
+        )
+        if payload.get("note"):
+            line += f" note={json.dumps(payload['note'])}"
+        print(line)
+        return
 
     if isinstance(payload, dict) and payload.get("kind") == "upload":
         line = payload.get("url", "")
@@ -525,7 +600,10 @@ def output_agent(data: dict) -> None:
                 for item in entry["conversation_items"]:
                     print(_agent_post_line(item))
         for entry in payload.get("errors", []):
-            print(f"{entry.get('identifier', '?')} error={entry.get('error', 'lookup_error')}")
+            print(
+                f"{entry.get('identifier', '?')} error={entry.get('error', 'lookup_error')}",
+                file=sys.stderr,
+            )
         return
 
     # User lists (e.g. following, muting, blocking) — check before dict operations
@@ -555,7 +633,10 @@ def output_agent(data: dict) -> None:
                 line = f"{line}: {' '.join(entry['last_post_content_text'].split())}"
             print(line)
         for entry in payload.get("errors", []):
-            print(f"@{entry.get('username', '?')} error={entry.get('error', 'lookup_error')}")
+            print(
+                f"@{entry.get('username', '?')} error={entry.get('error', 'lookup_error')}",
+                file=sys.stderr,
+            )
         return
 
     items = payload.get("items", [])
@@ -565,8 +646,14 @@ def output_agent(data: dict) -> None:
         return
 
     # Single result fallback
-    if "id" in payload:
-        print(f"OK id={payload.get('id')} url={payload.get('url', '')}")
+    if _is_write_result(data):
+        line = "OK"
+        if payload.get("id"):
+            line += f" id={payload['id']}"
+        line += f" url={payload.get('url', '')}"
+        if payload.get("preview"):
+            line += f" preview={payload['preview']}"
+        print(line)
         return
 
     if "username" in payload:
@@ -583,5 +670,8 @@ def output(data: dict, fmt: str = "agent") -> None:
         output_human(data)
     elif fmt == "agent":
         output_agent(data)
-    else:
+    elif fmt == "json":
         output_json(data)
+    else:
+        # The CLI rejects unknown formats up front; never guess a different contract.
+        raise ValueError(f"Unknown output format {fmt!r}; use agent, json or human")

@@ -1,13 +1,11 @@
 """API contracts and shared bounded workflows; never external writes."""
 
-import io
 import json
 from unittest.mock import patch
 from urllib.parse import parse_qs
 
 import httpx
 import pytest
-from PIL import Image
 from typer.testing import CliRunner
 
 from mb.api import MicroblogClient
@@ -20,10 +18,9 @@ BLOG = "https://agent.micro.blog/"
 URL = BLOG + "post.html"
 
 
-def image_bytes(fmt="PNG"):
-    stream = io.BytesIO()
-    Image.new("RGB", (3, 4), "blue").save(stream, format=fmt)
-    return stream.getvalue()
+def image_bytes():
+    """Synthetic PNG bytes; uploads never decode images, only check the signature."""
+    return b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR synthetic"
 
 
 def transport_service(tmp_path, handler, **options):
@@ -210,13 +207,15 @@ def test_publish_refusal_paths_never_write(tmp_path, status, hash_value, code):
 
 def test_image_preview_upload_then_post_and_retry_without_file(tmp_path):
     file = tmp_path / "image.png"
-    file.write_bytes(image_bytes() + b"PRIVATE APPENDED PAYLOAD")
+    raw = image_bytes() + b"\x00EXIF-like trailing bytes stay"
+    file.write_bytes(raw)
     requests = []
 
     def response(request):
         requests.append(request)
         if request.url.path == "/micropub/media":
-            assert b"PRIVATE APPENDED" not in request.content
+            # The user's bytes are sent unchanged: no re-encoding or metadata stripping.
+            assert raw in request.content and b'filename="image.png"' in request.content
             assert b"mp-destination" in request.content and BLOG.encode() in request.content
             assert b"image/png" in request.content
             return httpx.Response(202, headers={"Location": BLOG + "uploads/image.png"})
@@ -224,7 +223,9 @@ def test_image_preview_upload_then_post_and_retry_without_file(tmp_path):
 
     service = transport_service(tmp_path, response, media_root=tmp_path)
     preview = service.media_preview("image.png", "Blue rectangle")["data"]
-    assert preview["width"] == 3 and preview["height"] == 4 and preview["metadata_removed"]
+    assert preview["byte_count"] == len(raw) and preview["filename"] == "image.png"
+    assert preview["mime_type"] == "image/png" and preview["destination"] == BLOG
+    assert "width" not in preview and "upload_sha256" not in preview
     assert requests == [] and not service.state.path.exists()
     args = dict(file="image.png", alt="Blue rectangle", sha256=preview["sha256"])
     uploaded = service.write("media_upload", "image-upload", args)

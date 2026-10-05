@@ -129,7 +129,8 @@ class TestMicropub:
         result = mock_client.micropub_create(content="Hello world")
         assert result["ok"] is True
         assert "url" in result["data"]
-        assert result["data"]["id"] == "newpost.html"
+        # The Location slug is not a Micro.blog ID, so no ID is invented.
+        assert "id" not in result["data"]
 
     def test_create_draft(self, mock_client):
         result = mock_client.micropub_create(content="Draft", draft=True)
@@ -143,15 +144,6 @@ class TestMicropub:
         result = mock_client.micropub_list()
         assert result["ok"] is True
         assert "items" in result["data"]
-
-    def test_upload_photo(self, mock_client, tmp_path):
-        photo = tmp_path / "test.jpg"
-        from PIL import Image
-
-        Image.new("RGB", (2, 2), "blue").save(photo)
-        result = mock_client.micropub_upload_photo(str(photo))
-        assert result["ok"] is True
-        assert result["data"]["url"] == "https://cdn.micro.blog/photos/example-upload.jpg"
 
     def test_upload_bytes(self, mock_client):
         result = mock_client.micropub_upload_bytes(

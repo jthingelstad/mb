@@ -253,9 +253,8 @@ async def test_missing_auth_allows_discovery_and_returns_actionable_error(tmp_pa
 
 @pytest.mark.anyio
 async def test_stdio_local_image_draft_workflow_and_new_reads(tmp_path):
-    from PIL import Image
-
-    Image.new("RGB", (3, 4), "blue").save(tmp_path / "image.png")
+    raw = b"\x89PNG\r\n\x1a\n" + b"synthetic image bytes"
+    (tmp_path / "image.png").write_bytes(raw)
     async with stdio_client(parameters(tmp_path, "--media-root", str(tmp_path))) as (read, write):
         async with ClientSession(read, write, read_timeout_seconds=10) as session:
             await session.initialize()
@@ -275,7 +274,8 @@ async def test_stdio_local_image_draft_workflow_and_new_reads(tmp_path):
             image = (await call("media_preview", {"file": "image.png", "alt": "Blue rectangle"}))[
                 "data"
             ]
-            assert image["width"] == 3 and not (tmp_path / "state.sqlite").exists()
+            assert image["byte_count"] == len(raw) and image["mime_type"] == "image/png"
+            assert not (tmp_path / "state.sqlite").exists()
             args = {
                 "file": "image.png",
                 "alt": image["alt"],
