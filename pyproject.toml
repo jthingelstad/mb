@@ -38,7 +38,7 @@ Homepage = "https://github.com/jthingelstad/mb"
 Repository = "https://github.com/jthingelstad/mb"
 Issues = "https://github.com/jthingelstad/mb/issues"
 Changelog = "https://github.com/jthingelstad/mb/blob/main/RELEASE.md"
-"Homebrew tap" = "https://github.com/jthingelstad/homebrew-mb"
+"Homebrew tap" = "https://github.com/jthingelstad/homebrew-tap"
 
 [project.optional-dependencies]
 mcp = ["mcp>=2.3.0,<3"]

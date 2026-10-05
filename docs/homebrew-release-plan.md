@@ -1,6 +1,6 @@
 # Homebrew packaging notes
 
-`mb` is distributed through the first-party tap [jthingelstad/homebrew-mb](https://github.com/jthingelstad/homebrew-mb) (`brew install jthingelstad/mb/mb`). This note records why it is packaged that way and what each release has to check.
+`mb` is distributed through the first-party tap [jthingelstad/homebrew-tap](https://github.com/jthingelstad/homebrew-tap) (`brew install jthingelstad/tap/mb`). This note records why it is packaged that way and what each release has to check.
 
 ## Decisions
 

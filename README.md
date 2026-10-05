@@ -7,7 +7,7 @@
 ### Homebrew (recommended)
 
 ```bash
-brew install jthingelstad/mb/mb
+brew install jthingelstad/tap/mb
 ```
 
 The formula includes MCP support. Supported platforms are Apple Silicon Macs on macOS 15 or later, and Linux on x86_64 or arm64 through Homebrew on Linux. Intel Macs and macOS 14 may work but are unsupported, because Homebrew itself no longer ships bottles for them.

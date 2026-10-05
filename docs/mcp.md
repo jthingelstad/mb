@@ -3,7 +3,7 @@
 `mb mcp` is a local stdio MCP server built on the same services as the CLI; it does not shell out to `mb`. The Homebrew formula includes it. With uv, install the extra:
 
 ```sh
-brew install jthingelstad/mb/mb
+brew install jthingelstad/tap/mb
 # or
 uv tool install --from git+https://github.com/jthingelstad/mb 'mb[mcp]'
 ```

@@ -107,7 +107,7 @@ def _check_install(report: _Report) -> None:
             "mcp",
             WARN,
             "MCP extra not installed; mb mcp is unavailable",
-            "brew install jthingelstad/mb/mb, or uv tool install --from "
+            "brew install jthingelstad/tap/mb, or uv tool install --from "
             "git+https://github.com/jthingelstad/mb 'mb[mcp]'",
         )
 

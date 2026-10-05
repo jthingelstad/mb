@@ -517,7 +517,7 @@ def mcp_command(
         from mb.services import AuthenticationUnavailable, MicroblogService
     except ImportError:
         typer.echo(
-            "MCP support is optional. Install it with: brew install jthingelstad/mb/mb "
+            "MCP support is optional. Install it with: brew install jthingelstad/tap/mb "
             "or uv tool install --from git+https://github.com/jthingelstad/mb 'mb[mcp]'",
             err=True,
         )
