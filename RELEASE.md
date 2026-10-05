@@ -1,3 +1,11 @@
+## mb v2.2.0
+
+- **Guided sign-in.** Run bare `mb auth` in a terminal: it links the micro.blog app token page, reads the token without echoing it, checks it, and asks again (up to three times) when micro.blog rejects it. A network or server failure is reported instead of re-prompting. If the account can post to more than one blog, it lists them and asks which to use, defaulting to the profile's current blog or the account default; `--blog` skips the question. It saves the profile and prints next steps (`mb doctor`, `mb heartbeat`, adding the MCP server to Claude Code). Prompts go to stderr, and the result envelope still goes to stdout.
+- **No prompts for scripts.** Without a terminal, bare `mb auth` exits with a structured error rather than waiting for input. `mb auth -` and `mb auth TOKEN` behave as before.
+- **Setup hints.** "No token configured" errors and `mb doctor` now point at `mb auth`.
+
+---
+
 ## mb v2.1.0
 
 - **Versioned results.** Every CLI `--format json` envelope and MCP result starts with `"schema_version": 1`. Adding a field keeps the version; removing, renaming or retyping one bumps it.

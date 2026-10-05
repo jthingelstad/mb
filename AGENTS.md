@@ -118,6 +118,7 @@ Global flags can appear before or after the command:
 Top-level commands:
 
 ```text
+mb auth                            Guided setup in a terminal: hidden token prompt, blog picker
 mb auth -                          Read the token from stdin (mb auth <token> also works)
 mb whoami
 mb profiles

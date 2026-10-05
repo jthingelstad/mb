@@ -236,6 +236,117 @@ def test_auth_refuses_empty_stdin(stdin):
     assert not config.CONFIG_FILE.exists()
 
 
+# ── mb auth (guided) ───────────────────────────────────────
+
+GOOD = "good-token-value"
+TWO_BLOGS = [
+    {"uid": "https://one.example/", "name": "One"},
+    {"uid": "https://two.example/", "name": "Two", "microblog-default": True},
+]
+
+
+def guided(args, stdin, blogs=None, verify=None):
+    """Run mb auth as if at a terminal, against a fake micro.blog that accepts GOOD."""
+
+    def client(token):
+        def verify_token():
+            if verify:
+                return verify
+            if token == GOOD:
+                return {"ok": True, "data": {"username": "newuser"}}
+            return {"ok": False, "error": "Unauthorized", "code": 401}
+
+        destinations = blogs if blogs is not None else [{"uid": "https://newuser.micro.blog/"}]
+        return Mock(
+            verify_token=verify_token,
+            micropub_get_config=lambda: {"ok": True, "data": {"destination": destinations}},
+        )
+
+    with (
+        patch("mb.cli._interactive", return_value=True),
+        patch("mb.cli.MicroblogClient", side_effect=lambda token: client(token)),
+    ):
+        return runner.invoke(app, ["-f", "json", *args], input=stdin)
+
+
+def envelope(result):
+    """The JSON result; CliRunner also echoes visible prompt answers onto stdout."""
+    return json.loads(result.stdout[result.stdout.index("{") :])
+
+
+def test_bare_auth_without_a_terminal_refuses_instead_of_prompting():
+    result = invoke(["-f", "json", "auth"], input="")
+    assert result.exit_code == 1
+    assert envelope(result)["code"] == 400
+    assert "mb auth -" in envelope(result)["error"]
+    assert not config.CONFIG_FILE.exists()
+
+
+def test_guided_auth_hides_the_token_and_saves_a_single_blog_account():
+    result = guided(["auth"], f"{GOOD}\n")
+    assert result.exit_code == 0, result.output
+    assert GOOD not in result.output
+    assert "https://micro.blog/account/apps" in result.stderr
+    assert "@newuser" in result.stderr and "mb doctor" in result.stderr
+    data = envelope(result)["data"]
+    assert data == {"username": "newuser", "message": "Token saved", "profile": "default"}
+    assert config.get_token() == GOOD and config.get_blog() is None
+    assert stat.S_IMODE(os.stat(config.CONFIG_FILE).st_mode) == 0o600
+
+
+def test_guided_auth_retries_a_rejected_token():
+    result = guided(["auth"], f"wrong\n   \n{GOOD}\n")
+    assert result.exit_code == 0, result.output
+    assert "did not accept that token" in result.stderr
+    assert "No token entered" in result.stderr
+    assert config.get_token() == GOOD
+
+
+def test_guided_auth_gives_up_after_three_rejections():
+    result = guided(["auth"], "a\nb\nc\n")
+    assert result.exit_code == 1
+    assert envelope(result)["code"] == 401
+    assert not config.CONFIG_FILE.exists()
+
+
+def test_guided_auth_reports_a_network_failure_without_retrying():
+    failure = {"ok": False, "error": "Network error", "code": 503}
+    result = guided(["auth"], f"{GOOD}\n", verify=failure)
+    assert result.exit_code == 1
+    assert envelope(result)["error"] == "Network error"
+    assert "did not accept" not in result.stderr
+
+
+def test_guided_auth_asks_which_blog_when_there_are_several():
+    result = guided(["auth"], f"{GOOD}\n1\n", blogs=TWO_BLOGS)
+    assert result.exit_code == 0, result.output
+    assert "1. One (https://one.example/)" in result.stderr
+    assert "[2]" in result.stderr  # the account default is offered first
+    assert envelope(result)["data"]["blog"] == "https://one.example/"
+    assert config.get_blog() == "https://one.example/"
+
+
+def test_guided_auth_defaults_to_the_profile_blog_on_a_rerun():
+    config.save_config(token="old", blog="https://one.example/")
+    result = guided(["auth"], f"{GOOD}\n\n", blogs=TWO_BLOGS)
+    assert result.exit_code == 0, result.output
+    assert config.get_blog() == "https://one.example/" and config.get_token() == GOOD
+
+
+def test_guided_auth_with_blog_option_skips_the_picker():
+    result = guided(["auth", "--blog", "https://two.example/"], f"{GOOD}\n", blogs=TWO_BLOGS)
+    assert result.exit_code == 0, result.output
+    assert "several blogs" not in result.stderr
+    assert config.get_blog() == "https://two.example/"
+
+
+def test_guided_auth_names_a_non_default_profile():
+    result = guided(["--profile", "work", "auth"], f"{GOOD}\n")
+    assert result.exit_code == 0, result.output
+    assert "profile work" in result.stderr
+    assert config.get_token(profile="work") == GOOD
+
+
 # ── destination hint ───────────────────────────────────────
 
 

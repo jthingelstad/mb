@@ -61,9 +61,7 @@ def get_username(ctx: typer.Context) -> str:
         return username
 
     fmt = get_format(ctx)
-    output(
-        {"ok": False, "error": "Cannot determine username. Run: mb auth <token>", "code": 401}, fmt
-    )
+    output({"ok": False, "error": "Cannot determine username. Run: mb auth", "code": 401}, fmt)
     raise SystemExit(1)
 
 
