@@ -1,4 +1,27 @@
+## mb v2.0.1
+
+The first release meant for public use, installable with `brew install jthingelstad/mb/mb`.
+
+- **Write recovery hardening.** Ctrl-C or a killed process during a write now records the outcome as unknown instead of leaving a pending claim that blocks every later write. Failures before anything is sent are reported as `not_applied`, and a reply reads its thread before claiming the operation ID. A person can now record the verified outcome with `mb operation-status ID --resolve applied|not_applied [--scope blog|reply] [--note TEXT]`. Resolution only updates the local receipt, is never automatic, and is not available over MCP.
+- **`mb doctor [--offline]`.** A read-only health check: version, Python and install method, every `mb` on `PATH` and which one shadows the others, MCP availability, config permissions and profiles, token source, (online) token, blogs and destination, state file permissions, pending/unknown receipts with resolve hints, legacy checkpoints and media root. Exits 1 on any error.
+- **`mb --version` / `-V`.**
+- **`mb auth -`** reads the token from stdin so it stays out of shell history. `mb auth TOKEN` still works.
+- **Config safety.** The config file is written atomically and created 0600 from the start; profile and checkpoint names are limited to letters, digits, `-` and `_`; an unreadable config gives a structured error with its path and line instead of a traceback. With `MB_TOKEN` set, the username comes from that token rather than the cached profile.
+- **Edits and results.** An edit with empty content is refused instead of blanking the post. A new post's result reports its `url`; the old `id` (the URL's last path segment, which no command accepted) is gone.
+- **CLI fixes.** `--format=json` style options work anywhere; an unknown `--format`/`MB_FORMAT` is an error instead of silently using JSON; `--count` is bounded 1 to 50 and `poll --interval` 1 to 3600; agent output decodes HTML entities.
+- **Images upload unchanged.** `mb media upload` / `mb upload` take any local JPEG, PNG, GIF or WebP up to 20 MiB and upload it exactly as provided; `--sha256` is optional and the CLI no longer needs `--media-root`. EXIF/GPS metadata is not stripped. The MCP image tools still require an absolute `--media-root`. The Pillow dependency is removed.
+- **Pipeline fixes.** Agent-format `coverage=` metadata goes to stderr; `mb lookup users` and `mb lookup posts` errors go to stderr with a non-zero exit; stdin readers skip blank lines and `#` comments.
+- **Verified destination everywhere.** `post get`, `post list` and URL lookups in `lookup posts` verify the account and send the selected blog's canonical Micropub destination, like the other write and read services. `heartbeat --mentions-only` no longer advances the heartbeat checkpoint.
+- **MCP:** the default `--consumer` is now `default` (was `dot`). The missing-extra hint points at Homebrew and `uv tool install`.
+- **Docs rewritten for public release:** README, MCP contracts, migration notes, `mb guide`, `mb://guide`, skills and client examples (Claude Code, Claude Desktop, Codex, OpenClaw).
+- **Release-notes correction:** `mb notes`, documented in v1.0, was removed in 2.0. Use ordinary posts with a category instead.
+- **Packaging:** project metadata (readme, URLs, classifiers); CI tests Python 3.11 to 3.14 on Linux and macOS. The Homebrew tap supports every platform Homebrew bottles: Apple Silicon macOS and Linux x86_64/arm64.
+
+---
+
 ## mb v2.0.0
+
+Released. Upgrading from 1.x: see [docs/migration-2.0.md](docs/migration-2.0.md).
 
 - Optional local stdio `mb mcp` with 23 typed tools and packaged workflow guidance. The base CLI stays lightweight and imports no MCP runtime.
 - Shared post validation/publishing, native reply, thread and mention services. Structured envelopes remain; post/upload calls have explicit major-version changes (see [migration guide](docs/migration-2.0.md)).
@@ -6,15 +29,15 @@
 - Native-order attention anchors and revision-CAS acknowledgement support nonmonotonic IDs; exact inbox anchors establish completeness. Additive provenance marks unverified historical checkpoints as review-required without resetting or rewriting them. Mixed-version writes invalidate trust.
 - Durable account/blog post receipts and account-scoped native reply receipts with caller operation IDs, argument fingerprints and explicit unknown outcomes. No automatic resend; interrupted pending operations require human reconciliation.
 - Review fixes: resolve canonical/custom destination URLs safely; reject malformed feed/source and write confirmations; preserve native pagination order and refuse overlapping or invalid pages; exclude echoed credential values from stored recovery metadata.
-- Selected-blog server-side search/categories; bounded Discover/profile/own-reply reads and public URL conversations. The existing credential lacks a required scope for URL conversations; HTTP 403 is preserved with actionable guidance and no access-mode fallback.
+- Selected-blog server-side search/categories; bounded Discover/profile/own-reply reads and public URL conversations. Tokens without the scope URL conversations need get HTTP 403 reported as `reason=insufficient_scope`, with no anonymous fallback.
 - Guarded existing-draft publish using reviewed source hash. Human CLI post/upload writes generate and persist an ID before dispatch when omitted; explicit stable IDs still deduplicate exact agent/script retries. Unknown outcomes include a copyable read-only recovery command, and `operation-status --latest` inspects the newest claimed receipt. Rerunning a plain command starts a new operation. MCP still requires IDs; ownership/media/source guards and no-auto-resend behavior remain.
 - Reviewed local image preview/upload for CLI and MCP, explicit allowed directory, Pillow decoding/normalization, metadata removal, selected destination, file hash guard and separate upload/post receipts. Alt text accompanies the post; HTTP 202 is labelled accepted/processing.
 - Removed combined `--photo` and implicit absolute-path/remote uploads with clear migration errors. `upload` aliases the reviewed relative-file media workflow; dry-run needs no ID.
-- Keyword mute and DELETE unmute/unblock contract fixes. Content-index and Homebrew release plans documented; neither cache nor tap is implemented.
+- Keyword mute and DELETE unmute/unblock contract fixes. Content-index and Homebrew packaging plans documented.
 - Read-only mode, structured errors and tool annotations; synthetic Codex-style stdio lifecycle tests and OpenClaw configuration example.
 - CLI fixes: refuse truncated inbox/catchup advancement; preserve pipeline record boundaries and `auth --blog`; contain transport failures and expose retry metadata; remove the undeclared Click runtime import uncovered by an isolated wheel install. Draft responses retain their preview link on the initial call.
 
-This release does not import credentials, register clients, change cron or publish real posts during installation. Existing 1.x users should review the migration guide before replacing their executable. See [MCP contracts and remaining limitations](docs/mcp.md).
+Installing does not import credentials, register clients, change cron or publish anything. `mb notes`, documented in v1.0, was removed. See [MCP contracts](docs/mcp.md).
 
 ---
 
@@ -52,7 +75,7 @@ A command-line client for [micro.blog](https://micro.blog), designed for agent u
 
 **Blog** -- `mb blog posts` (with category filter), `categories`, `search`.
 
-**Notes** -- Public supplementary notes stored as categorized blog posts. `mb notes add`, `recall` (with `--category` and `--search` filters), `forget`, `categories`, `guide`. Designed to complement an agent's private memory, not replace it.
+**Notes** (removed in 2.0) -- Public supplementary notes stored as categorized blog posts. `mb notes add`, `recall` (with `--category` and `--search` filters), `forget`, `categories`, `guide`. Designed to complement an agent's private memory, not replace it.
 
 ### Output Formats
 

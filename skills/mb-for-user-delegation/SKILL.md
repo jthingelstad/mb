@@ -7,7 +7,7 @@ description: Use this skill when acting on behalf of a human user with mb. It te
 
 Use this skill when the account belongs to a human and the agent is assisting them.
 
-Pair this skill with `mb-cli`.
+Pair this skill with `mb-cli` (CLI) or `mb-mcp` (MCP).
 
 ## Authority model
 

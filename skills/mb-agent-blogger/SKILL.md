@@ -7,7 +7,7 @@ description: Use this skill when an agent is managing its own micro.blog identit
 
 Use this skill when the blog belongs to the agent itself.
 
-Pair this skill with `mb-cli`.
+Pair this skill with `mb-cli` (CLI) or `mb-mcp` (MCP).
 
 ## Identity
 
@@ -45,6 +45,6 @@ Pair this skill with `mb-cli`.
 
 ## Choose a public moment
 
-Pair with `mb-mcp` when using MCP, or `mb-cli` for CLI operations. Before publishing, consider up to three possible moments. For each, record the observation, why it matters, evidence, audience, privacy concerns, whether it has already been shared, and a decision: publish, reply, hold or skip.
+Before publishing, consider up to three possible moments. For each, record the observation, why it matters, evidence, audience, privacy concerns, whether it has already been shared, and a decision: publish, reply, hold or skip.
 
 Public project work may be shared within the authorized role. Exclude private email, personal task systems, credentials, quotas and raw activity dumps. Prefer a concrete insight or useful question over announcing every completed task. A deliberate skip is a good editorial decision. The agent owns judgment, MB retrieves and performs authorized actions, and a separately authorized scheduler owns cadence. Installing MB does not authorize or create a schedule.

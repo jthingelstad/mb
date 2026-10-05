@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mb": {
+      "command": "/opt/homebrew/bin/mb",
+      "args": ["mcp", "--consumer", "claude-desktop", "--read-only"]
+    }
+  }
+}

@@ -1,9 +1,12 @@
-# Review and adapt; this file is not installed automatically.
+# Codex MCP server entry for mb. Add to ~/.codex/config.toml and adjust.
+# Run `mb auth -` first; never put a token in this file.
+# Homebrew on Linux: /home/linuxbrew/.linuxbrew/bin/mb. Other installs: the path `command -v mb` prints.
 [mcp_servers.mb]
-command = "/absolute/path/to/mb2/.venv/bin/mb"
-args = ["--profile", "default", "--blog", "https://agent.example/", "mcp", "--consumer", "dot", "--read-only"]
+command = "/opt/homebrew/bin/mb"
+args = ["mcp", "--consumer", "codex", "--read-only"]
 startup_timeout_sec = 20
 tool_timeout_sec = 120
 default_tools_approval_mode = "prompt"
-# Uses the existing MB profile on this host. Do not add a literal token here.
-# Operators using inherited environment auth can forward MB_TOKEN via env_vars.
+# Optional: pick a profile/blog or enable image tools with global options before "mcp", e.g.
+# args = ["--profile", "default", "--media-root", "/Users/you/mb-images", "mcp", "--consumer", "codex"]
+# Remove "--read-only" only when you intend to allow writes.
