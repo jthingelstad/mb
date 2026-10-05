@@ -31,6 +31,7 @@ class _FlexibleGroup(typer.core.TyperGroup):
         "--media-root",
     }
     _FLAG_OPTS = {"--human"}
+    _VERSION_OPTS = {"--version", "-V"}
 
     def parse_args(self, ctx, args):
         args = list(args)
@@ -41,13 +42,74 @@ class _FlexibleGroup(typer.core.TyperGroup):
             if args[i] in self._VALUED_OPTS and i + 1 < len(args):
                 front.extend([args[i], args[i + 1]])
                 i += 2
+            elif args[i].startswith("--") and args[i].split("=", 1)[0] in self._VALUED_OPTS:
+                front.append(args[i])
+                i += 1
             elif args[i] in self._FLAG_OPTS:
                 front.append(args[i])
                 i += 1
             else:
                 rest.append(args[i])
                 i += 1
+        # Only a leading --version/-V asks for the version; later it may be content.
+        if rest and rest[0] in self._VERSION_OPTS:
+            fmt = _requested_format(front)
+            _exit_on_invalid_format(fmt)
+            version = package_version()
+            if fmt == "json":
+                output({"ok": True, "data": {"version": version}}, fmt)
+            else:
+                typer.echo(f"mb {version}")
+            ctx.exit(0)
         return super().parse_args(ctx, front + rest)
+
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except config.ConfigError as exc:
+            fmt = (ctx.obj or {}).get("format", "agent")
+            output({"ok": False, "error": str(exc), "code": 400}, fmt)
+            raise SystemExit(1) from None
+
+
+FORMATS = ("agent", "json", "human")
+
+
+def package_version() -> str:
+    """Return the installed distribution version without importing optional extras."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("mb")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def _requested_format(front: list[str]) -> str:
+    """Resolve the format from hoisted global options the way the main callback does."""
+    fmt = None
+    i = 0
+    while i < len(front):
+        arg = front[i]
+        if arg == "--human":
+            return "human"
+        if arg in {"-f", "--format"} and i + 1 < len(front):
+            fmt = front[i + 1]
+            i += 2
+            continue
+        if arg.startswith("--format="):
+            fmt = arg.split("=", 1)[1]
+        i += 1
+    return fmt if fmt is not None else os.environ.get("MB_FORMAT") or "agent"
+
+
+def _exit_on_invalid_format(fmt: str, source: str = "--format") -> None:
+    if fmt not in FORMATS:
+        typer.echo(
+            f"Error: unknown output format {fmt!r} from {source}; use agent, json or human",
+            err=True,
+        )
+        raise SystemExit(2)
 
 
 app = typer.Typer(
@@ -109,9 +171,13 @@ def main(
     media_root: str | None = typer.Option(
         None, "--media-root", help="Explicit allowed local image directory"
     ),
+    show_version: bool = typer.Option(
+        False, "--version", "-V", help="Print the mb version and exit"
+    ),
 ):
     """mb — micro.blog CLI for agents."""
     ctx.ensure_object(dict)
+    source = "--format"
     if human:
         fmt = "human"
     else:
@@ -122,7 +188,10 @@ def main(
             env_fmt = os.environ.get("MB_FORMAT")
             if env_fmt:
                 fmt = env_fmt
+                source = "MB_FORMAT"
+    _exit_on_invalid_format(fmt, source)
     ctx.obj["format"] = fmt
+    config.validate_name("profile", profile)
     ctx.obj["profile"] = profile
     ctx.obj["state_file"] = state_file
     ctx.obj["media_root"] = media_root
@@ -136,12 +205,19 @@ def main(
 @app.command()
 def auth(
     ctx: typer.Context,
-    token: str = typer.Argument(..., help="micro.blog app token"),
+    token: str = typer.Argument(
+        ..., help="micro.blog app token, or - to read it from stdin (keeps it out of shell history)"
+    ),
     blog_dest: str = typer.Option(None, "--blog", help="Default blog destination for this profile"),
 ):
     """Store token and verify it works."""
     fmt = get_format(ctx)
     profile = get_profile(ctx)
+    if token == "-":
+        token = sys.stdin.read().strip()
+        if not token:
+            output({"ok": False, "error": "No token on stdin", "code": 400}, fmt)
+            raise SystemExit(1)
     client = MicroblogClient(token=token)
     result = client.verify_token()
     if result["ok"]:
@@ -261,9 +337,11 @@ def discover_alias(
 @app.command()
 def heartbeat(
     ctx: typer.Context,
-    count: int = typer.Option(3, "--count", "-n", min=1, help="Maximum timeline items to include"),
+    count: int = typer.Option(
+        3, "--count", "-n", min=1, max=50, help="Maximum timeline items to include (1-50)"
+    ),
     mention_count: int = typer.Option(
-        3, "--mention-count", min=0, help="Maximum mention items to include"
+        3, "--mention-count", min=0, max=50, help="Maximum mention items to include (0-50)"
     ),
     mentions_only: bool = typer.Option(
         False, "--mentions-only", help="Only include mention/reply activity"
@@ -317,7 +395,9 @@ def inbox(
 @app.command()
 def catchup(
     ctx: typer.Context,
-    count: int = typer.Option(20, "--count", "-n", min=1, help="Maximum timeline items to include"),
+    count: int = typer.Option(
+        20, "--count", "-n", min=1, max=50, help="Maximum timeline items to include (1-50)"
+    ),
     advance: bool = typer.Option(
         False, "--advance", help="Save the newest seen post ID as the catchup checkpoint"
     ),
@@ -354,7 +434,9 @@ app.add_typer(conversation.app, name="conversation", help="Thread fetching")
 def poll(
     ctx: typer.Context,
     since: int = typer.Option(..., "--since", help="Post ID to poll since"),
-    interval: int = typer.Option(30, "--interval", help="Seconds between polls"),
+    interval: int = typer.Option(
+        30, "--interval", min=1, max=3600, help="Seconds between polls (1-3600)"
+    ),
 ):
     """Emit JSON events to stdout; ctrl-c to stop."""
     import json
@@ -405,7 +487,9 @@ def poll(
 def mcp_command(
     ctx: typer.Context,
     consumer: str = typer.Option(
-        "dot", "--consumer", help="Independent attention consumer (dot, openclaw, etc.)"
+        "default",
+        "--consumer",
+        help="Name for this client's independent attention checkpoints",
     ),
     read_only: bool = typer.Option(
         False, "--read-only", help="Disable remote writes and checkpoint acknowledgement"
@@ -420,7 +504,11 @@ def mcp_command(
         from mb.mcp_server import serve
         from mb.services import AuthenticationUnavailable, MicroblogService
     except ImportError:
-        typer.echo("MCP support is optional. Install with: uv tool install 'mb[mcp]'", err=True)
+        typer.echo(
+            "MCP support is optional. Install it with: brew install jthingelstad/mb/mb "
+            "or uv tool install --from git+https://github.com/jthingelstad/mb 'mb[mcp]'",
+            err=True,
+        )
         raise typer.Exit(1) from None
     profile = get_profile(ctx)
     blog_dest = ctx.obj.get("blog")

@@ -200,7 +200,11 @@ class MicroblogService:
                     in {u.rstrip("/") for u in self._destination_urls(d, destinations)}
                 ]
                 if len(matches) != 1:
-                    return failure("Blog must resolve to exactly one available destination", 400)
+                    return failure(
+                        "Blog must resolve to exactly one available destination; "
+                        "run: mb blogs to list them",
+                        400,
+                    )
                 blog = matches[0]["uid"]
             else:
                 default = account["data"].get("default_site", "")
@@ -210,7 +214,10 @@ class MicroblogService:
                 ]
                 if not matches:
                     if len(destinations) != 1:
-                        return failure("Choose an explicit --blog destination", 400)
+                        return failure(
+                            "Choose an explicit --blog destination (run: mb blogs to list them)",
+                            400,
+                        )
                     matches = destinations
                 blog = matches[0]["uid"]
             endpoint = configuration["data"].get("media-endpoint")

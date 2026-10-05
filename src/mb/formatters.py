@@ -605,5 +605,8 @@ def output(data: dict, fmt: str = "agent") -> None:
         output_human(data)
     elif fmt == "agent":
         output_agent(data)
-    else:
+    elif fmt == "json":
         output_json(data)
+    else:
+        # The CLI rejects unknown formats up front; never guess a different contract.
+        raise ValueError(f"Unknown output format {fmt!r}; use agent, json or human")

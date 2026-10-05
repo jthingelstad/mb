@@ -11,7 +11,7 @@ app = typer.Typer(no_args_is_help=False, invoke_without_command=True, rich_marku
 @app.callback(invoke_without_command=True)
 def timeline_default(
     ctx: typer.Context,
-    count: int = typer.Option(20, "--count", "-n", help="Number of posts"),
+    count: int = typer.Option(20, "--count", "-n", min=1, max=50, help="Number of posts (1-50)"),
     since: int = typer.Option(None, "--since", help="Return posts after this ID"),
     before: int = typer.Option(None, "--before", help="Return posts before this ID"),
 ):

@@ -1,5 +1,7 @@
 """Shared helpers for command modules."""
 
+import hashlib
+import os
 import re
 import shlex
 from uuid import uuid4
@@ -28,20 +30,35 @@ def get_profile(ctx: typer.Context) -> str:
     return _get_profile(ctx)
 
 
+# Verified usernames per token digest, so one process verifies each token once.
+_VERIFIED_USERNAMES: dict[str, str] = {}
+
+
 def get_username(ctx: typer.Context) -> str:
-    """Resolve the current username from config or by verifying the token."""
+    """Resolve the current username from config or by verifying the token.
+
+    MB_TOKEN may belong to a different account than the profile's saved username,
+    so an environment token is always verified instead of trusting the config.
+    """
     from mb import config
     from mb.formatters import output
 
     profile = get_profile(ctx)
-    username = config.get_username(profile=profile)
-    if username:
-        return username
+    if not os.environ.get("MB_TOKEN"):
+        username = config.get_username(profile=profile)
+        if username:
+            return username
 
     client = get_client(ctx)
+    key = hashlib.sha256(str(client.token).encode()).hexdigest()
+    if key in _VERIFIED_USERNAMES:
+        return _VERIFIED_USERNAMES[key]
     result = client.verify_token()
     if result["ok"]:
-        return result["data"].get("username", "")
+        username = result["data"].get("username", "")
+        if username:
+            _VERIFIED_USERNAMES[key] = username
+        return username
 
     fmt = get_format(ctx)
     output(

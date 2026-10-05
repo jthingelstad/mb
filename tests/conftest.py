@@ -17,6 +17,9 @@ def isolated_configuration(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "config" / "config.toml")
     for name in ("MB_TOKEN", "MB_BLOG", "MB_FORMAT"):
         monkeypatch.delenv(name, raising=False)
+    from mb import commands
+
+    monkeypatch.setattr(commands, "_VERIFIED_USERNAMES", {})
 
 
 # ── Sample response data ────────────────────────────────────
