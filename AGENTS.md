@@ -55,7 +55,7 @@ src/mb/commands/user.py         User and social graph commands
 src/mb/commands/blog.py         Read own posts, categories, search
 src/mb/commands/upload.py       `mb upload` alias for media upload
 tests/                          Unit and CLI integration tests
-scripts/                        Distribution checks run in CI
+scripts/                        Distribution checks run in CI; live_smoke.py (live test account)
 ```
 
 ## API Split
@@ -364,6 +364,8 @@ Testing guidance:
 - No live API calls should be added to tests
 - Favor CLI tests for argument parsing and output behavior
 - Favor API tests for transport and response normalization
+
+Live smoke (`.github/workflows/live-smoke.yml`, `scripts/live_smoke.py`) is the only place mb talks to the real micro.blog API in automation. It runs Mondays and on demand (`gh workflow run live-smoke.yml`) in the `live-smoke` environment, whose `MB_TEST_TOKEN` belongs to a dedicated test account (POAPChallenge), never a real blog. It signs in with guided `mb auth` in a pseudo-terminal, runs CLI reads and `mb doctor`, validates every MCP read against its published schema, then creates, edits, publishes and deletes one post on the test blog. Run it before tagging a release. Set the `MB_TEST_BLOG` environment variable if the test account gains a second blog. Never point it at a real account, and never run it on pull requests.
 
 
 ## MCP
