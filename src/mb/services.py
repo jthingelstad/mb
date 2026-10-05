@@ -906,7 +906,20 @@ class MicroblogService:
                 raise
             return unknown
         if result["ok"] and target is not None:
-            result = {**result, "data": {**result.get("data", {}), "url": target}}
+            data = result.get("data", {})
+            reported = data.get("url")
+            if (
+                action == "post_publish"
+                and isinstance(reported, str)
+                and reported != target
+                and self._owns_url(reported)
+            ):
+                # Micro.blog moves a draft to a new URL when it is published; the old one
+                # stops resolving, so report where the post now lives.
+                data = {**data, "url": reported, "draft_url": target}
+            else:
+                data = {**data, "url": target}
+            result = {**result, "data": data}
         result = {
             **result,
             "operation_id": operation_id,

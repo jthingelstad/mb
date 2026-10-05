@@ -1906,6 +1906,9 @@
             },
             "id": {
               "type": "string"
+            },
+            "draft_url": {
+              "type": "string"
             }
           },
           "required": [],

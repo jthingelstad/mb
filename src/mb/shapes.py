@@ -264,7 +264,7 @@ DATA_SCHEMAS: dict[str, dict] = {
     "post_reply": _WRITE,
     "post_edit": _WRITE,
     "post_delete": _WRITE,
-    "post_publish": _WRITE,
+    "post_publish": _obj({}, {"url": _STR, "id": _STR, "draft_url": _STR}),
     "media_upload": _obj(
         {},
         {
