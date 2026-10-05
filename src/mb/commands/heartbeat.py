@@ -66,7 +66,9 @@ def run(
     no_advance: bool = False,
 ):
     """Build a compact heartbeat summary from current identity and recent activity."""
-    if no_advance:
+    if no_advance or mentions_only:
+        # The checkpoint is shared with the timeline; a mention ID can be newer than
+        # timeline posts this run never showed, so a mentions-only run never advances.
         advance = False
     client = get_client(ctx)
     fmt = get_format(ctx)
@@ -79,12 +81,14 @@ def run(
         return
     account = identity["data"]
 
-    latest_timeline = client.get_timeline(count=1)
-    if not latest_timeline["ok"]:
-        output_or_exit(latest_timeline, fmt)
-        return
-    add_content_text(latest_timeline["data"])
-    latest_timeline_items = latest_timeline["data"].get("items", [])
+    latest_timeline_items: list[dict] = []
+    if not mentions_only:
+        latest_timeline = client.get_timeline(count=1)
+        if not latest_timeline["ok"]:
+            output_or_exit(latest_timeline, fmt)
+            return
+        add_content_text(latest_timeline["data"])
+        latest_timeline_items = latest_timeline["data"].get("items", [])
 
     if mentions_only:
         timeline_items = []

@@ -416,7 +416,8 @@ def output_agent(data: dict) -> None:
             detail += f" truncated={str(payload['truncated']).lower()}"
         if payload.get("identity", {}).get("blog"):
             detail += f" blog={payload['identity']['blog']}"
-        print(detail)
+        # Metadata goes to stderr so stdout stays one line per post for pipes.
+        print(detail, file=sys.stderr)
 
     if isinstance(payload, dict) and payload.get("kind") == "operation_resolution":
         line = (
@@ -559,7 +560,10 @@ def output_agent(data: dict) -> None:
                 for item in entry["conversation_items"]:
                     print(_agent_post_line(item))
         for entry in payload.get("errors", []):
-            print(f"{entry.get('identifier', '?')} error={entry.get('error', 'lookup_error')}")
+            print(
+                f"{entry.get('identifier', '?')} error={entry.get('error', 'lookup_error')}",
+                file=sys.stderr,
+            )
         return
 
     # User lists (e.g. following, muting, blocking) — check before dict operations
@@ -589,7 +593,10 @@ def output_agent(data: dict) -> None:
                 line = f"{line}: {' '.join(entry['last_post_content_text'].split())}"
             print(line)
         for entry in payload.get("errors", []):
-            print(f"@{entry.get('username', '?')} error={entry.get('error', 'lookup_error')}")
+            print(
+                f"@{entry.get('username', '?')} error={entry.get('error', 'lookup_error')}",
+                file=sys.stderr,
+            )
         return
 
     items = payload.get("items", [])

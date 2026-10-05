@@ -12,7 +12,6 @@ from mb.commands import (
     get_client,
     get_format,
     get_service,
-    get_username,
     output_or_exit,
     resolve_post_url,
 )
@@ -311,6 +310,11 @@ def get_post(
 
     fmt = get_format(ctx)
     client = get_client(ctx)
+    # Verify the selected blog so Micropub reads carry its canonical destination UID,
+    # never the raw --blog or config value.
+    identity = get_service(ctx, client).identity()
+    if not identity["ok"]:
+        output_or_exit(identity, fmt)
 
     url = resolve_post_url(client, post_id, fmt)
     from mb.services import read_source
@@ -449,12 +453,15 @@ def list_posts(
     """List your posts."""
     fmt = get_format(ctx)
     client = get_client(ctx)
+    identity = get_service(ctx, client).identity()
+    if not identity["ok"]:
+        output_or_exit(identity, fmt)
     result = client.micropub_list(drafts=drafts)
     if result["ok"]:
         # Normalize Micropub h-entry items to JSON Feed format for formatters
         items = result["data"].get("items", [])
         if items and "properties" in items[0]:
-            username = get_username(ctx)
+            username = identity["data"]["username"]
             normalized = client._normalize_micropub_items(items, owner=username)
             result["data"]["items"] = normalized
         add_content_text(result["data"])

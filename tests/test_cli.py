@@ -744,6 +744,9 @@ class TestHeartbeat:
         assert data["data"]["timeline"] == []
         assert data["data"]["new_timeline_count"] == 0
         assert [item["id"] for item in data["data"]["mentions"]] == ["20004"]
+        # Mention 20004 is newer than unseen timeline posts; the shared cursor stays put.
+        assert data["data"]["advanced"] is False and data["data"]["latest_id"] == 20004
+        assert "heartbeat_checkpoint = 20002" in config_file.read_text()
 
     def test_heartbeat_default_advance_considers_unsampled_mentions(self, tmp_path):
         config_dir = tmp_path / ".config" / "mb"
@@ -1242,7 +1245,7 @@ class TestUserPipelines:
                 app, ["--format", "json", "lookup", "users", "--last-post", "alice", "bob"]
             )
 
-        assert result.exit_code == 0
+        assert result.exit_code == 1  # Partial results print, but a failed lookup fails.
         data = json.loads(result.output)
         assert [entry["username"] for entry in data["data"]["users"]] == ["alice"]
         assert data["data"]["errors"][0]["username"] == "bob"
