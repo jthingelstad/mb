@@ -1,6 +1,8 @@
-include AGENTS.md RELEASE.md uv.lock
+include README.md LICENSE AGENTS.md RELEASE.md uv.lock
 recursive-include docs *.md
-recursive-include examples *.toml *.json
+recursive-include examples *.json *.toml *.md
 recursive-include skills *.md
+recursive-include src/mb/guidance *.md
 recursive-include tests *.py
 recursive-include scripts *.py
+global-exclude __pycache__ *.py[cod]

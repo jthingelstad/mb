@@ -4,15 +4,41 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mb"
-version = "2.0.0"
+version = "2.0.1"
 description = "Command-line client for micro.blog, designed for agent use"
+readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Jamie Thingelstad" }]
 requires-python = ">=3.11"
+keywords = ["micro.blog", "microblog", "cli", "mcp", "agents", "micropub", "indieweb"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Utilities",
+]
 dependencies = [
     "typer>=0.27.0",
     "httpx>=0.28.1",
     "rich>=15.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/jthingelstad/mb"
+Repository = "https://github.com/jthingelstad/mb"
+Issues = "https://github.com/jthingelstad/mb/issues"
+Changelog = "https://github.com/jthingelstad/mb/blob/main/RELEASE.md"
+"Homebrew tap" = "https://github.com/jthingelstad/homebrew-mb"
 
 [project.optional-dependencies]
 mcp = ["mcp>=2.3.0,<3"]
