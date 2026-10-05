@@ -1,117 +1,105 @@
-# Local stdio MCP candidate
+# MCP server
 
-MB 2.0 adds a focused MCP interface alongside its existing agent-first CLI. It reuses the HTTP client and shared publishing/thread/mention services; it does not shell out to the CLI. Install the optional extra in a separate environment while reviewing this candidate:
+`mb mcp` is a local stdio MCP server built on the same services as the CLI; it does not shell out to `mb`. The Homebrew formula includes it. With uv, install the extra:
 
 ```sh
-uv sync --locked --extra mcp
-.venv/bin/mb mcp --help
+brew install jthingelstad/mb/mb
+# or
+uv tool install --from git+https://github.com/jthingelstad/mb 'mb[mcp]'
 ```
 
-For the eventual installed release, use the `mcp` extra. Keep the existing 1.x tool installation until migration has been coordinated. This candidate does not register clients, change credentials or install a schedule.
+Client setup for Claude Code, Claude Desktop, Codex and OpenClaw is in the [README](../README.md#use-with-claude-and-other-mcp-clients) and [examples/](../examples/).
 
 ## Process and authentication
 
-The client launches `mb mcp` and owns its lifetime. Stdout contains MCP protocol messages only. Arguments bind one `--profile`, `--blog`, `--consumer` and optional `--read-only` policy. The process resolves the canonical blog using account verification and Micropub destinations before servicing a tool. A tool cannot replace that identity or provide a token. Configuration/env resolution matches the CLI (`MB_TOKEN`, `MB_BLOG`); the existing credential file is read, never rewritten. No token or OAuth-management tools are exposed.
+The MCP client launches `mb mcp` and owns its lifetime. Stdout carries only MCP protocol messages. Command-line options bind one identity and policy for the life of the process:
 
-`--state-file` selects the local SQLite cursor/receipt file, defaulting to `~/.config/mb/mcp-state.sqlite3`. Use the same file for multiple consumers of one account. Consumers have independent read state; post writes deduplicate across consumers by account/blog and operation ID; native reply receipts deduplicate by account across blog profiles. Profile aliases resolving to the same verified identity intentionally share state; different accounts and destinations remain separate. CLI cursors remain independent. SQLite uses mode 0600 and stores checkpoint IDs, revisions, hashed operation arguments and recovery metadata, not authentication or post bodies. Draft preview URLs are returned on the initial call but excluded from durable receipts.
+```text
+mb [--profile NAME] [--blog BLOG] [--state-file PATH] [--media-root DIR] mcp [--consumer NAME] [--read-only]
+```
 
-Reads are offloaded from the protocol event loop. Requests are serialized within a process, and mention classification uses at most four HTTP workers. Pending SQLite claims also prevent concurrent writes across cooperating processes. Cancellation cannot abandon an already dispatched write's receipt completion; process termination may leave a pending claim. MCP result envelopes retain `ok`, `data`, `error`, `code` and expose `isError`, recovery fields and structured content. Numeric post IDs are strings. Tool inputs reject unknown fields; tools advertise read/write/destructive annotations.
+Before serving any tool, the process verifies the account and resolves the canonical blog from Micropub destinations. Tools cannot switch identity or accept a token. The token comes from `MB_TOKEN` or the selected profile in `~/.config/mb/config.toml`, exactly as for the CLI; the server reads the config file and never writes it. There are no token or OAuth management tools. Desktop apps do not inherit your shell environment, so run `mb auth` first rather than relying on an exported `MB_TOKEN`.
+
+`--consumer` (default `default`) names an independent reader: each consumer has its own attention checkpoints, so several clients can share one account. `--read-only` disables remote writes and local checkpoint acknowledgement.
+
+`--state-file` selects the SQLite file for checkpoints and write receipts, default `~/.config/mb/mcp-state.sqlite3`, created with mode 0600. It stores checkpoint IDs, revisions, hashed operation arguments and recovery metadata; it never stores tokens or post bodies. Use one state file for every CLI script and MCP client that writes to the same account, since separate files cannot coordinate writes. CLI config checkpoints (`mb checkpoint`) are separate from MCP consumer checkpoints.
+
+Requests are serialized within a process, reads run off the protocol event loop, and pending SQLite claims stop concurrent writes across processes sharing a state file. Results keep the CLI envelope (`ok`, `data`, `error`, `code`) and also set `isError`, recovery fields and structured content. Numeric post IDs are decimal strings. Tool inputs reject unknown fields, and every tool carries read, write or destructive annotations.
 
 ## Tools and resources
 
 | Tool | Purpose |
 | --- | --- |
-| `identity` | Verify account and immutable destination |
+| `identity` | Verify account, canonical blog, consumer and read-only mode |
 | `heartbeat` | Compact timeline and recent-mention summary |
 | `inbox`, `catchup` | Consumer-scoped attention windows |
-| `timeline`, `conversation` | Bounded timeline and native ID/public URL threads |
+| `timeline`, `conversation` | Bounded timeline; threads by native ID or public URL |
 | `discover`, `profile_get`, `replies` | Bounded account-scoped social reads |
-| `blog_search`, `blog_categories` | Selected-blog server-filtered source search/categories |
+| `blog_posts`, `post_get` | Recent own posts and drafts; exact source with `source_hash` |
+| `blog_search`, `blog_categories` | Server-side search and categories for the selected blog |
+| `post_preview` | Validate exact content and destination without sending |
+| `post_create`, `post_reply`, `post_edit`, `post_delete` | Single-post writes; `operation_id` required |
+| `post_publish` | Publish a reviewed, unchanged draft |
 | `media_preview`, `media_upload` | Reviewed local image workflow |
-| `post_publish` | Guarded existing-draft publication |
-| `blog_posts`, `post_get` | Recent own posts/drafts and exact source |
-| `post_preview` | Validate exact content without publishing |
-| `post_create`, `post_reply`, `post_edit`, `post_delete` | One authorized post lifecycle, requiring `operation_id` |
-| `checkpoint_ack` | Explicit local acknowledgement of a complete window |
-| `operation_status` | Durable receipt and uncertainty recovery |
+| `checkpoint_ack` | Acknowledge a fully consumed attention window |
+| `operation_status` | Inspect a write receipt |
 
-Resources: `mb://guide` (packaged operational/editorial guidance), `mb://identity` and `mb://discover-collections`. Discovery collections are served as reference data. Broader relationship/moderation commands remain CLI-only.
+Resources: `mb://guide` (the packaged operating guide), `mb://identity` and `mb://discover-collections`. Follow, mute and block remain CLI-only. Reconciling an uncertain receipt (`mb operation-status --resolve`) is deliberately CLI-only and human-driven.
 
-## Attention contract
+## Attention
 
-Start with `identity`, then `heartbeat`. Use inbox/conversation for a mention that deserves attention; catchup for a fuller timeline read. Follow `next_cursor` until it is absent. Only a complete consumed window receives an `ack_receipt`; pass that to `checkpoint_ack` after reviewing the items. Reads never advance. Receipt revisions prevent stale acknowledgements. Handles expire on process restart or bounded cache eviction, so reread from the durable checkpoint.
+Start with `identity`, then `heartbeat`. Use `inbox` and `conversation` for mentions that deserve attention and `catchup` for a fuller timeline read. Follow `next_cursor` until it is absent. Only a completely consumed window returns an `ack_receipt`; pass it to `checkpoint_ack` after reviewing the items. Reads never advance a checkpoint. Receipts are revision-checked, so a stale receipt conflicts after another acknowledgement, and retrying the same acknowledgement is harmless. Cursors and receipts live in memory and expire on restart; reread from the durable checkpoint.
 
-The first heartbeat offers a bounded recent baseline. Acknowledging it intentionally starts from the newest returned ID, without claiming historical coverage; a first catchup can page available history. Attention freezes the first native item as its newest anchor and pages with the last returned ID until native exhaustion or the exact saved anchor, including when the upstream caps a requested page size. Recent mentions and Micropub source listings are finite windows: MB labels that limitation. If the saved inbox checkpoint precedes the available mention window, no acknowledgement is issued. This is an unresolved coverage gap, not proof that there was no activity. Heartbeat's mention sample is separate from inbox acknowledgement. `--read-only` disables remote writes and local acknowledgements.
+The first `heartbeat` returns a bounded recent baseline. Acknowledging it starts from the newest returned item without claiming historical coverage. A first `catchup` can page through available history. Heartbeat's mention sample is informational; `inbox` owns mention progress.
 
-## Write recovery contract
+Timeline and attention keep Micro.blog's native feed order. IDs are opaque anchors, not numbers to compare: a newer post can have a smaller ID. A window freezes its newest item as the upper fence and pages back until the feed is exhausted or the exact saved anchor is reached, refusing overlapping pages. The mentions API and Micropub source listings only cover a recent window. If a saved inbox checkpoint is older than that window, the result says `coverage_complete=false` and no acknowledgement is offered: report the gap instead of claiming nothing happened.
 
-Preview exact text and destination, obtain the required authorization, and generate one stable operation ID. Persist that ID and exact arguments in the host's task state. The ID is claimed before dispatch; retries return the existing receipt, and changed arguments conflict. A timeout after dispatch or a server error can leave `outcome=unknown`. Query `operation_status`, read back recent posts/source/conversations, and involve the user if evidence cannot settle it. Never automatically retry with a new ID.
+Checkpoints acknowledged by this version carry native-order provenance. A saved checkpoint without matching provenance (for example, one written by an older client) is reported with `checkpoint_review_required=true` and `coverage=legacy-checkpoint-review-required`. It can still be inspected but gets no completeness claim or acknowledgement receipt. `mb doctor` lists such checkpoints. To move on, review history around the saved anchor and start a new consumer from a fresh baseline; `mb` never resets or migrates old checkpoints on its own.
 
-If an ID exists in both selected-blog and account-wide native-reply scopes, `operation_status` returns `reason=ambiguous_operation` rather than choosing a receipt. Supply `scope="blog"` or `scope="reply"` to inspect the intended operation (CLI: `mb operation-status ID --scope reply`). Existing receipts need no migration. A native reply's successful HTTP response must contain a positive numeric `id` to count as confirmed; an unidentifiable success remains unknown and is never resent.
+## Writes and recovery
 
-Timeline and attention preserve Micro.blog's native feed order. IDs remain decimal strings for transport precision but are opaque chronological anchors: numeric magnitude never decides freshness, ordering or exhaustion. Window cursors track all fetched IDs, including buffered lookahead, and refuse overlapping pages. Inbox consumes only the prefix before its exact saved anchor; an absent anchor is an unresolved finite-window gap with no acknowledgement. Native acknowledgement uses revision compare-and-swap, so a newer post with a smaller numeric ID can advance safely. Same-receipt retries are idempotent; stale revisions, foreign handles, or changed checkpoint provenance conflict.
+1. Read recent posts and the target conversation.
+2. Call `post_preview` with the exact content. Preview validates; it does not authorize publishing.
+3. Get authorization through the host's normal approval flow.
+4. Choose one stable `operation_id` (1 to 128 letters, digits or `_.:-`) and keep it with the exact arguments in the task's own state.
+5. Call the write. Read back a confirmed result.
 
-New native acknowledgements add a `cursor_provenance` row containing scope, value, revision and `native-order-v1`. Existing `cursors` and operation receipts are not rewritten. Any saved checkpoint lacking matching native provenance—including one changed by an older client—is labelled `checkpoint_status=legacy-review-required`, `checkpoint_review_required=true`, and `coverage=legacy-checkpoint-review-required`. It remains available for inspection, but receives neither complete-coverage claims nor an acknowledgement receipt. Empty/null or malformed old rows and orphan provenance are never treated as a fresh bootstrap. Reads do not create or migrate tables; the additive provenance table is created only by a requested local state mutation.
+The ID is claimed in the state file before the request is sent. Retrying with the same ID and arguments returns the saved receipt without sending again; the same ID with different arguments conflicts. A timeout or server error after sending can leave `outcome=unknown`. Then call `operation_status`, read back posts, source or the conversation, and involve the person if the evidence is not conclusive. Never resend an uncertain write under a new ID. A failed write keeps its receipt; once the cause is fixed, a new, separately authorized action uses a new ID.
 
-Operator action for legacy anchors: preserve the database, inspect native history around the saved anchor, and decide the desired starting point. Use an explicitly reviewed new consumer to establish a recent baseline while retaining old state, or arrange an operator-reviewed local repair after validating the anchor. This candidate has no automatic reset, numeric-maximum migration, or tool that declares an old checkpoint reviewed. Restart old MCP clients before adoption; mixed-version writes invalidate provenance and require review again. CLI config checkpoints are separate and unchanged.
+A process killed between claim and completion leaves a `pending` receipt that blocks further writes in its scope. A person resolves it from the CLI after checking micro.blog: `mb operation-status ID --resolve applied|not_applied [--note TEXT]`. That only updates the local receipt. Don't delete the state file to get unstuck.
 
-A process killed between claim and completion leaves a pending receipt and blocks subsequent writes in that scope (the blog for Micropub, the account for native replies). This conservative candidate needs human read-back and local-state repair to reconcile such a claim. It has no automatic reconciliation or operation-reset tool. Separate state files do not coordinate writes. Keep the file, back it up before migration, and do not erase it as a retry workaround. Failed operations also retain their receipt; after resolving the cause, a human may authorize a distinct action with a new ID.
+Receipt scopes: Micropub writes (create, edit, delete, publish, upload) are scoped to the verified account and canonical blog; native replies are scoped to the account across blog profiles. Profile aliases for the same identity share receipts. If an ID exists in both scopes, `operation_status` returns `reason=ambiguous_operation`; pass `scope="blog"` or `scope="reply"` (CLI: `--scope`). A reply only counts as confirmed when the response contains a positive numeric `id`.
 
-Edit/delete accept exact URLs or native numeric IDs and require that the resolved URL belongs to the selected blog plus a successful Micropub source lookup. The immutable identity retains the native Micropub UID; a unique custom hostname returned for that destination is accepted for post source/edit/delete, and full custom URLs can select it at startup. Ambiguous aliases and path traversal are refused. Replies are native account-scoped operations and prepend the recipient mention. Follow confirmed writes with read-back. Preview does not confer authority to publish.
+Edit, delete and publish take an exact post URL or a native numeric ID. The resolved URL must belong to the selected blog and its Micropub source must load before anything is sent. A custom domain returned for the destination is accepted; ambiguous aliases and path traversal are refused. Replies use the native reply API and prepend the recipient's mention.
 
-## Client examples
+To publish a draft, review `post_get` and pass its `source_hash` to `post_publish`. `mb` rereads the source, requires it to still be a draft with the same hash, and changes only `post-status`. The remote API has no compare-and-swap, so an edit landing between that check and the write is still possible.
 
-[Codex configuration](../examples/codex-mcp.toml) uses the documented `mcp_servers` stdio shape. [OpenClaw configuration](../examples/openclaw-mcp.json) uses its `mcp.servers` registry. Both are examples for an operator to review; neither is installed by MB. Replace `/absolute/path/to/mb2/.venv/bin/mb` and the synthetic destination. They start in read-only mode. When an operator enables publishing, host approval policy must still reflect the user's authorized scope.
+### CLI and MCP
 
-Codex syntax was checked against [official OpenAI MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli). OpenClaw syntax was checked against its installed runtime documentation and [MCP registry documentation](https://docs.openclaw.ai/cli/mcp/registry). A local stdio server only works on a host that can execute its command; cloud-only ChatGPT access requires a separately supported connection, outside this candidate.
-
-## Verification and release boundary
-
-```sh
-uv sync --locked --extra mcp
-uv run --locked --extra mcp ruff check .
-uv run --locked --extra mcp ruff format --check .
-uv run --locked --extra mcp mypy src/mb --ignore-missing-imports
-uv run --locked --extra mcp pytest -q --cov=mb --cov-fail-under=70
-```
-
-Tests use synthetic HTTP and isolated config/state, including a subprocess running the actual `mb mcp` command. Scenarios cover identity, session changes, thread expansion, own recent posts, preview/publish/read-back, complete backlog paging, independent consumers, stale acknowledgements, rates/timeouts, duplicate prevention, read-only mode and deliberately choosing no write. No live posting is needed. Before replacing 1.x, run a coordinated read-only host smoke check and review actual authorization/receipt recovery. No tag or package publication is part of this candidate.
-
-## Bounded additions and images
-
-The candidate now has 23 typed tools. `discover`, `profile_get`, `replies` and URL conversations are account-scoped reads; selected `--blog` does not retarget a social account. `blog_posts`, `blog_search` and `blog_categories` use the verified Micropub destination. Search sends `q=source&filter=QUERY&mp-destination=UID` server-side; counts/category filters apply to that returned window, which is explicitly incomplete. These reads are not a whole-blog audit. Public URL conversations use the fixed Micro.blog `/conversation.js` JSON Feed endpoint, can include Webmentions, and mark 404 as `not_found=true`. Other failures remain errors. The existing credential returns HTTP 403 with `Token missing required scope`; MB now reports `reason=insufficient_scope` with operator guidance. This is a credential grant limitation, not evidence of an empty thread or a wrong URL. No anonymous fallback, User-Agent impersonation, alternate credential or reauthorization is attempted. The public intro target returns HTTP 200 and native conversation reads work. Successful URL-thread retrieval with appropriately scoped credentials remains unverified.
-
-`post_get` includes a `source_hash`. To publish an existing draft, review its exact content/photos/categories and call `post_publish(identifier, source_hash, operation_id)`. MB verifies ownership, rereads source, requires draft status and the unchanged hash, and updates only `post-status` to `published` at the same URL. Retries return the existing receipt before checking the now-published source. This is a pre-dispatch conflict guard; the remote API provides no server-atomic compare-and-swap guarantee, so a concurrent edit between read and write remains possible.
-
-Local MCP images are disabled by default. An operator explicitly starts with `--media-root /absolute/reviewed/images`; tool inputs are relative paths under it. Child symlinks, traversal, absolute paths and nonregular files are refused. Supported inputs are static JPEG/PNG/WebP, at most 20 MiB and 40 megapixels. Pillow decodes and re-encodes pixels, applies orientation and removes metadata/comments/appended bytes. WebP becomes PNG; JPEG is re-encoded. Animation, SVG, arbitrary files, video and remote URL fetching are excluded from this tool.
-
-1. `media_preview(file, alt)` shows format, dimensions, upload byte count, input/upload hashes, alt text and selected destination. Nothing uploads.
-2. After authorization for the image/destination, `media_upload(file, alt, sha256, operation_id)` refuses a changed file and claims a receipt before upload. HTTP 202 means accepted (`processing_pending=true`), not confirmed public availability. Timeout/malformed confirmation yields unknown and is never automatically resent. A retry returns its receipt even after the file is gone.
-3. Preserve the returned URL and reviewed alt text. Call `post_preview(content, photo_url=URL, photo_alt=ALT, ...)`, then separately authorized `post_create` with a different stable ID. Alt text is sent on the post (`mp-photo-alt`), not only upload. A failed post does not trigger another upload. There is no transactional upload-plus-post API or automatic orphan-upload cleanup.
-
-```sh
-mb --media-root ./reviewed --format json media preview image.png --alt "Description"
-mb --media-root ./reviewed media upload image.png --alt "Description" --sha256 REVIEWED_SHA --operation-id image-upload-1
-mb post new "Caption" --photo-url RETURNED_URL --alt "Description" --operation-id image-post-1
-mb post get EXISTING_DRAFT_URL --format json
-mb post publish EXISTING_DRAFT_URL --source-hash REVIEWED_HASH --operation-id publish-draft-1
-mb operation-status publish-draft-1
-```
-
-CLI create/short/reply/edit/delete/publish and upload always use the shared services. Human use can omit `--operation-id`: MB generates and saves an ID before dispatch. Each plain invocation starts a new operation, so scripts and agents should supply stable IDs for exact retry deduplication. Unknown outcomes print a copyable read-only recovery command; `mb operation-status --latest` inspects the newest claimed receipt. No unknown write is automatically resent. MCP still requires caller-stable IDs. Edit/delete require exact owned URLs or numeric IDs, not legacy slug suffixes. Combined `--photo` refuses before upload; use reviewed media upload and a separate post ID. `mb upload` is a spelling alias for the same reviewed relative-file/hash/alt/ID workflow; implicit absolute paths and remote fetching are removed. See [concrete 1.x migration and adoption steps](migration-2.0.md).
-
-A coordinated real image-to-post test would be valuable before adoption: choose a specifically approved image, destination, caption/alt and draft/publish choice; check availability, source alt and rendered output. No actual image was uploaded or published during verification. See [content-index proposal](content-index-plan.md) and [Homebrew release plan](homebrew-release-plan.md) for proposed subsequent work.
-
-## Compatibility investigation and CLI receipt parity
-
-The documented request is `GET /conversation.js?url=FULL_POST_URL&format=jsonfeed`, with JSON `Accept`. Official Inkwell additionally sends Bearer authorization and requests `read write` when obtaining its token. MB matches the endpoint/auth/query/header shape and uses httpx's normal identifying User-Agent. The live reply is an explicit scope refusal, not a robots/CDN/UA challenge; varying the UA or trying more targets cannot establish access. A separately permitted public fetch confirms the intro target exists, and the existing native profile/conversation routes succeed. MB stops at the refusal; no attempt was made to remove authentication to get around it. [Micro.blog's public scope documentation](https://help.micro.blog/t/indieauth/99) recommends `read` for reading and `read write` for a full client; older tokens may have differing compatibility permissions. The server does not name the exact missing scope, so an operator should review the app grant rather than MB asserting a particular token's scope set or modifying it.
-
-| Surface | Current receipt policy | Remaining difference |
+| Surface | Operation ID | Notes |
 | --- | --- | --- |
-| MCP consequential writes | Caller operation ID required | Shared state is required across processes; remote writes are not server-idempotent |
-| CLI post create/short/reply/edit/delete/publish and `media upload`/`upload` | Caller operation ID required | Same shared service, guards and receipts as MCP; dry-run remains pure |
-| Combined `post ... --photo` and implicit/remote upload | Refused before side effects | Use reviewed media upload and separate post ID; no automatic fetching |
-| CLI follows/moderation | Direct API compatibility path | No MCP tools or durable receipt contract in this bounded candidate |
-| CLI `post get/list` | Legacy read path | Less identity/coverage enforcement than shared MCP post source; `blog posts/search/categories` use selected-blog services |
+| MCP writes | Required | Same services, guards and receipts as the CLI |
+| CLI `post new/short/reply/edit/delete/publish`, `media upload`, `upload` | Optional; generated (`cli-…`) and saved when omitted | Each plain invocation is a new operation; scripts should pass a stable ID. `--dry-run` sends nothing and records nothing |
+| CLI `operation-status --resolve` | Existing ID | Human-only reconciliation; no MCP equivalent |
+| CLI follows and moderation | None | Direct API calls without receipts; no MCP tools |
+| CLI `post get`, `post list` | n/a | Simpler read path; `blog posts/search/categories` use the selected-blog services |
 
-The 2.0 compatibility decision is implemented: no legacy direct post/upload escape path remains. Scripts must persist caller IDs/arguments and share their state file with MCP. Receipts do not make remote writes server-idempotent. Pending/unknown operations need read-back and operator reconciliation; there is no automatic reset. See [migration examples and exact adoption gates](migration-2.0.md). Installed 1.1, cron and credentials are unchanged.
+Receipts prevent duplicate local retries; they do not make micro.blog itself idempotent.
+
+## Images
+
+Local images are disabled unless the server starts with `--media-root DIR`. The path must be absolute; the root itself may be a symlink. Tool inputs are paths relative to it; traversal, absolute paths, symlinks inside the root and non-regular files are refused. Supported types are JPEG, PNG, GIF and WebP up to 20 MiB, and the file's contents must match its extension. Files are uploaded byte for byte: `mb` does not re-encode, rotate, convert or strip metadata, so EXIF and GPS data in the file is published with it. Keep only files that are safe to publish under the media root. Remote URLs are never fetched.
+
+1. `media_preview(file, alt)` reports `file`, `filename`, `mime_type`, `byte_count`, `sha256`, `alt` and the destination. Nothing is uploaded.
+2. After authorization, `media_upload(file, alt, sha256, operation_id)` requires the preview's `sha256`, refuses a file that changed since preview, and claims a receipt before uploading. HTTP 202 means accepted and still processing (`processing_pending=true`), not proven public. A retry returns the receipt even if the file is gone.
+3. Keep the returned URL and alt text and call `post_preview`/`post_create` with `photo_url` and `photo_alt` under a different operation ID. Alt text is sent with the post. A failed post must not trigger another upload; there is no combined upload-and-post transaction or orphan cleanup.
+
+## Bounded reads
+
+`discover`, `profile_get`, `replies` and URL conversations act as the account; `--blog` does not change them. `blog_posts`, `blog_search` and `blog_categories` use the verified Micropub destination. Search runs server-side (`q=source&filter=QUERY`), and counts and category filters apply to the returned window, which is labelled incomplete. None of these is a whole-blog audit.
+
+Conversations by public URL use Micro.blog's `/conversation.js` JSON Feed endpoint and can include Webmentions. A 404 is reported as `not_found=true`; other failures stay errors. Some app tokens lack the scope this endpoint requires. You then get HTTP 403 with `reason=insufficient_scope`: review the app token's permissions on micro.blog, or use the native numeric conversation ID. `mb` does not retry anonymously or vary its User-Agent.
+
+## Tests
+
+The suite uses synthetic HTTP and isolated config and state, including a subprocess running the real `mb mcp` command over stdio. It covers identity, attention paging and acknowledgement, independent consumers, stale receipts, rate limits and timeouts, duplicate prevention, read-only mode, images and draft publishing. No test touches the live API.

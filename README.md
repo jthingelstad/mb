@@ -1,42 +1,108 @@
 # mb
 
-A bridge to [micro.blog](https://micro.blog), designed for agents: an agent-first CLI and an optional local stdio MCP server.
-
-`mb` prioritizes agent-friendly output, composable commands, and zero interactive prompts, making it a good fit for AI agents and scripts.
-
-The 2.0 release adds 23 typed tools, explicit acknowledgement, shared write receipts, reviewed local images, guarded draft publishing and bounded discovery/search reads. Human CLI post/upload writes save generated operation IDs; agents can supply stable retry IDs, and MCP requires them; combined photo posting and remote fetching are removed. See [MCP setup and contracts](docs/mcp.md) and [2.0 migration and adoption](docs/migration-2.0.md).
+`mb` is a command-line client for [micro.blog](https://micro.blog), built first for AI agents and scripts and still pleasant for people. It reads your timeline, mentions and threads, publishes and edits posts, uploads images and manages follows. Output is compact and pipeable, nothing prompts interactively, and every write gets a durable receipt so an uncertain result can be checked instead of resent. An optional local MCP server (`mb mcp`) exposes the same services to Claude, Codex and other MCP clients as 23 typed tools.
 
 ## Install
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+### Homebrew (recommended)
 
 ```bash
-uv tool install .
+brew install jthingelstad/mb/mb
 ```
 
-## Quick Start
+The formula includes MCP support. Supported platforms are Apple Silicon Macs on macOS 15 or later, and Linux on x86_64 or arm64 through Homebrew on Linux. Intel Macs and macOS 14 may work but are unsupported, because Homebrew itself no longer ships bottles for them.
+
+### uv
 
 ```bash
-# Authenticate with your micro.blog app token
-mb auth YOUR_TOKEN
-
-# Check who you're logged in as
-mb whoami
-
-# Post something
-mb post new "Hello from the command line"
-
-# Read your timeline
-mb timeline
+uv tool install --from git+https://github.com/jthingelstad/mb 'mb[mcp]'
 ```
 
-CLI post and upload commands generate and save an operation ID before sending, so ordinary use needs no extra option. Each plain invocation is a new operation, including a repeated command with the same text. Scripts and agents should supply a stable `--operation-id task-42-create` and reuse the exact arguments to recover without sending twice.
+Requires Python 3.11 or later. Drop `[mcp]` if you only want the CLI.
 
-If a write times out or its confirmation is unclear, MB prints a copyable `operation-status` command. You can also run `mb operation-status --latest` in the same profile/blog/state file; this reads the newest claimed receipt, not necessarily an unresolved one. Inspect the remote result before starting another operation. An unknown receipt is never automatically resent or treated as proof that nothing happened.
+### From a checkout (development)
+
+```bash
+git clone https://github.com/jthingelstad/mb && cd mb
+uv sync --locked --extra mcp
+uv run mb --version
+```
+
+## Get a token and sign in
+
+1. On micro.blog, open **Account**, go to **Edit Apps** (the app tokens page), and generate a new app token. Menu labels on micro.blog may differ slightly; look for the place that lists app tokens.
+2. Give it to `mb` on stdin, so it never lands in your shell history:
+
+   ```bash
+   mb auth -            # paste the token, then press Enter and Ctrl-D
+   pbpaste | mb auth -  # or pipe it from the clipboard / a password manager
+   ```
+
+   `mb auth TOKEN` also works but leaves the token in shell history. Add `--blog https://you.micro.blog/` to set the profile's default blog.
+3. Check it:
+
+   ```bash
+   mb whoami    # account and blog
+   mb doctor    # full read-only health check
+   ```
+
+`mb doctor` reports the version, Python and install method, every `mb` on your `PATH` (and which one shadows the others), whether MCP support is importable, config file permissions and profiles, where the token comes from, a live token check with your blogs and the selected destination, the state file and any pending or unknown write receipts (with how to resolve them), legacy checkpoints and the media root. Use `mb doctor --offline` to skip network checks. It exits 1 if anything is an error.
+
+## Quick start
+
+Nothing below publishes until you drop `--draft` or `--dry-run`.
+
+```bash
+mb heartbeat                               # what changed since last time
+mb inbox                                   # mentions that may deserve a reply
+mb timeline --count 10
+
+mb post new --dry-run "Hello from mb"      # validate only, no request sent
+mb post new --draft "Hello from mb"        # saved as a draft on micro.blog
+mb post list --drafts
+```
+
+When you are ready to publish a draft, review it and publish exactly what you reviewed:
+
+```bash
+mb post get https://you.micro.blog/2026/10/05/hello.html --format json   # note source_hash
+mb post publish https://you.micro.blog/2026/10/05/hello.html --source-hash HASH
+```
+
+Or post directly: `mb post new "Hello from mb"`, or `mb post short "A small thought"` for a title-less short post.
+
+## Use with Claude and other MCP clients
+
+`mb mcp` runs a local stdio MCP server. The client starts the process; nothing listens on the network. Start in `--read-only` mode, which disables remote writes and also local checkpoint acknowledgement (`checkpoint_ack`). Run `mb auth` first: the server uses your saved profile, and desktop apps do not inherit your shell environment, so an exported `MB_TOKEN` will not reach them.
+
+**Claude Code:**
+
+```bash
+claude mcp add mb -- mb mcp --consumer claude-code --read-only
+```
+
+**Claude Desktop:** add this to `claude_desktop_config.json` (also in [examples/claude-desktop.json](examples/claude-desktop.json)). Use the absolute path to `mb`: `/opt/homebrew/bin/mb` on Apple Silicon Homebrew, `/home/linuxbrew/.linuxbrew/bin/mb` on Linux, or whatever `command -v mb` prints.
+
+```json
+{
+  "mcpServers": {
+    "mb": {
+      "command": "/opt/homebrew/bin/mb",
+      "args": ["mcp", "--consumer", "claude-desktop", "--read-only"]
+    }
+  }
+}
+```
+
+**Codex and OpenClaw:** see [examples/codex-mcp.toml](examples/codex-mcp.toml) and [examples/openclaw-mcp.json](examples/openclaw-mcp.json).
+
+To allow writes, remove `--read-only` deliberately and keep your client's tool approval prompts on; every MCP write needs a caller-chosen `operation_id`. Image tools are off unless you add a global `--media-root` with an absolute path before `mcp`, for example `"args": ["--media-root", "/Users/you/mb-images", "mcp", "--consumer", "claude-desktop"]`; the server can then read only files inside that directory. Each `--consumer` name keeps its own read checkpoints, so two clients can share one account without stealing each other's progress (the default consumer is `default`).
+
+See [docs/mcp.md](docs/mcp.md) for the tool list and contracts. The server also serves its own operating guide as the `mb://guide` resource.
 
 ## Configuration
 
-`mb` stores configuration in `~/.config/mb/config.toml` and supports multiple profiles:
+`mb auth` writes `~/.config/mb/config.toml` with owner-only (0600) permissions. Each table is a profile:
 
 ```toml
 [default]
@@ -50,234 +116,203 @@ username = "you"
 blog = "https://work.micro.blog/"
 ```
 
-Switch profiles with `--profile`:
+Select one with `--profile work` (or `-p work`); add a profile with `mb --profile work auth -`. `--blog` picks a destination for one command when an account has several blogs (`mb blogs` lists them).
 
-```bash
-mb --profile work post new "Posted from work blog"
-```
+| Variable | Purpose |
+| --- | --- |
+| `MB_TOKEN` | Token; overrides the profile's token |
+| `MB_BLOG` | Default blog destination; `--blog` still wins |
+| `MB_FORMAT` | Default output format: `agent`, `json` or `human` |
 
-### Environment Variables
+Write receipts and MCP read checkpoints live in `~/.config/mb/mcp-state.sqlite3` (0600). Use `--state-file PATH` to choose another file, and point every CLI script and MCP client that writes to the same account at the same file.
 
-| Variable    | Purpose                                    |
-|-------------|--------------------------------------------|
-| `MB_TOKEN`  | Auth token (overrides config file)         |
-| `MB_BLOG`   | Default blog destination                   |
-| `MB_FORMAT` | Default output format override: `agent`, `json`, or `human` |
+## Output formats
 
-## Output Formats
-
-Agent output is the default:
+The default `agent` format is compact plain text, one line per item:
 
 ```text
-[12345] @you (2h): Hello from the command line
+[123456789] @you (2h): Hello from the command line
 ```
 
-Use `--format json` for structured output:
+`--human` (or `MB_FORMAT=human`) prints readable tables. `--format json` prints a stable envelope for scripts:
 
 ```json
-{ "ok": true, "data": { "id": "12345", "url": "https://you.micro.blog/2025/01/01/hello.html" } }
+{
+  "ok": true,
+  "data": {
+    "url": "https://you.micro.blog/2026/10/05/hello.html",
+    "id": "hello.html"
+  },
+  "operation_id": "cli-4889061347a74f679d58bacc1075c6a1",
+  "outcome": "applied"
+}
 ```
 
-Use `--human` for readable output. `--format agent` is still available explicitly, but it is also the default.
+That is what `mb post new` returns. The post's address is `url`; for a new post `id` is just the last path segment of that URL, so use the URL when you edit, publish or delete it later. Errors look like `{"ok": false, "error": "...", "code": 400}`; rate limits add `retry_after`. Records go to stdout. Metadata lines such as `coverage=`, and per-item errors from `mb lookup users`, go to stderr so the next pipeline stage only sees records. A failed command exits non-zero.
 
-Human users can set `export MB_FORMAT=human` in their shell profile. Scripts that require machine-readable output should pass `--format json`.
+## Command reference
 
-## Project Skills
-
-This repo includes local skills for agents using `mb`. The intended split is:
-
-- `mb-cli`: the base operational skill for using the CLI safely and effectively
-- `mb-mcp`: the operational skill for typed stdio tools and explicit acknowledgement
-- `mb-for-user-delegation`: behavior guidance for agents acting on behalf of a human user's account
-- `mb-agent-blogger`: behavior guidance for agents posting on their own account as themselves
-
-Use `mb-cli` for CLI operations or `mb-mcp` for MCP operations. Pair it with exactly one behavior skill depending on whose blog is being managed.
-
-Examples:
+Global options go before or after the command:
 
 ```text
-Human-delegation case:
-  use mb-cli + mb-for-user-delegation
-  Example: an agent drafts, reviews, and manages follows for Jamie's account
-
-Agent-owned blog case:
-  use mb-cli + mb-agent-blogger
-  Example: Otto reads, posts, and curates follows for Otto's own blog
+-p, --profile NAME     Config profile (default: default)
+-b, --blog BLOG        Blog destination, name or URL
+-f, --format FORMAT    agent | json | human
+--human                Same as --format human
+--state-file PATH      Shared write receipts and MCP checkpoints
+--media-root DIR       Absolute directory the MCP server may read images from
+-V, --version          Print the version
+--help                 Help for any command
 ```
 
-This separation keeps command usage, social norms, and authorship boundaries distinct. The CLI skill explains how to use `mb`; the behavior skills explain how to behave on micro.blog in each role.
-
-### OpenClaw Setup
-
-In OpenClaw, the simplest way to use multiple skills is to make them available in the specific agent's workspace. There is no special "compose these two skills" syntax. You give an agent access to both skill folders, and OpenClaw loads them together.
-
-Recommended layout:
+**Setup and diagnostics**
 
 ```text
-~/openclaw/workspaces/jamie-assistant/skills/
-  mb-cli/
-  mb-for-user-delegation/
-
-~/openclaw/workspaces/otto/skills/
-  mb-cli/
-  mb-agent-blogger/
+mb auth -|TOKEN [--blog URL]        Save and verify a token (prefer -, read from stdin)
+mb whoami                           Signed-in account and blog
+mb profiles                         Configured profiles
+mb blogs                            Blogs this token can post to
+mb doctor [--offline]               Read-only health check; exit 1 on any error
+mb guide                            Workflow guide for agents
+mb mcp [--consumer NAME] [--read-only]   Run the stdio MCP server
 ```
 
-One way to set that up from this repo is with symlinks:
+**Attention and reading**
+
+```text
+mb heartbeat [-n N] [--mention-count N] [--mentions-only] [--no-advance]
+mb inbox [-n N] [--reason mention|thread-reply] [--fresh-hours H] [--max-age-days D] [--all] [--advance]
+mb catchup [-n N] [--advance]
+mb timeline [-n N] [--since ID] [--before ID]
+mb timeline mentions | photos
+mb timeline discover [-c COLLECTION] [--list] [-n N]
+mb discover [-c COLLECTION] [--list] [-n N]      Same as timeline discover
+mb timeline check --since ID                    Count new posts since an ID
+mb timeline checkpoint [ID]                     Read or save the timeline checkpoint
+mb poll --since ID [--interval SECONDS]         Stream JSON events until Ctrl-C
+mb conversation ID|URL                          Full thread, root to leaf
+```
+
+**Checkpoints** (for heartbeat, inbox, catchup and timeline)
+
+```text
+mb checkpoint list
+mb checkpoint get NAME
+mb checkpoint set NAME ID
+mb checkpoint clear [NAME] [--all]
+```
+
+**Posts**
+
+```text
+mb post new [TEXT|-] [--content TEXT] [--file post.md] [-t TITLE] [--draft]
+            [--photo-url URL --alt TEXT] [-c CATEGORY]... [--dry-run] [--operation-id ID]
+mb post short [TEXT|-] [same options, no title] [--strict-300]
+mb post get ID|URL                              Includes source_hash
+mb post edit ID|URL [--content TEXT] [-t TITLE] [-c CATEGORY]... [--operation-id ID]
+mb post reply ID|URL TEXT|- [--operation-id ID]
+mb post delete ID|URL [--operation-id ID]
+mb post publish ID|URL --source-hash HASH [--operation-id ID]   Publish a reviewed draft
+mb post list [--drafts]
+mb post replies [-n N]                          Replies you have made
+```
+
+`post new` takes exactly one content source; with `--file`, a leading `# Heading` becomes the title. `-` reads from stdin.
+
+**Images**
+
+```text
+mb media preview PATH --alt TEXT                 Check type, size and sha256; uploads nothing
+mb media upload PATH --alt TEXT [--sha256 HASH] [--operation-id ID]
+mb upload PATH --alt TEXT [--sha256 HASH] [--operation-id ID]        Alias
+```
+
+**Your blog** (selected destination)
+
+```text
+mb blog posts [-n N] [-c CATEGORY]
+mb blog categories
+mb blog search QUERY [-n N] [-c CATEGORY]
+```
+
+**People**
+
+```text
+mb user show USERNAME [-n N]
+mb user following [USERNAME]          Also: mb following
+mb user discover [USERNAME]           Accounts they follow that you do not
+mb user follow USERNAME|-             Also: mb follow
+mb user unfollow USERNAME|-           Also: mb unfollow
+mb user is-following USERNAME
+mb user mute VALUE [--keyword]
+mb user muting
+mb user unmute ID
+mb user block USERNAME
+mb user blocking
+mb user unblock ID
+```
+
+**Lookups** (explicit, slower enrichment for pipelines)
+
+```text
+mb lookup users [USERNAME...] [--last-post] [--days-since-posting] [--concurrency N]
+mb lookup posts [ID|URL...] [--post] [--conversation] [--concurrency N]
+```
+
+**Write receipts**
+
+```text
+mb operation-status ID [--scope blog|reply]
+mb operation-status --latest [--scope blog|reply]
+mb operation-status ID --resolve applied|not_applied [--scope blog|reply] [--note TEXT]
+```
+
+## Write safety and recovery
+
+Every post, reply, edit, delete, publish and upload is recorded in the state file before it is sent. If you don't pass `--operation-id`, `mb` generates one (`cli-` plus 32 hex characters), saves it, and prints it with the result. Running the same plain command twice is two operations and can post twice; `mb` never deduplicates by content.
+
+Scripts and agents should choose a stable ID instead (1 to 128 letters, digits or `_.:-`), store it with the exact arguments before running the command, and reuse both on any retry. A retry with the same ID and arguments returns the saved receipt without sending again; the same ID with different arguments is refused.
+
+When a write times out or the server's answer is unclear, the receipt says `outcome=unknown` and `mb` prints a copyable `mb operation-status ...` command. Then:
+
+1. Inspect the receipt: `mb operation-status ID`, or `mb operation-status --latest` for the newest one in this account and blog.
+2. Check micro.blog itself (`mb post list`, `mb blog posts`, `mb post replies`, the conversation) to see whether the write happened.
+3. Record what you found: `mb operation-status ID --resolve applied` or `--resolve not_applied`, optionally with `--note "seen on the blog at 10:42"`. This only updates the local receipt; it changes nothing on micro.blog. Resolution is a human step and is not available over MCP.
+
+A process killed mid-write can leave a `pending` receipt, which blocks further writes in that scope until it is resolved. `mb doctor` lists pending and unknown receipts with the command to resolve each. Don't delete the state file to get unstuck, and don't rerun an uncertain write under a new ID.
+
+Images are uploaded exactly as provided: `mb` does not re-encode, resize, rotate, convert or strip anything. **EXIF and GPS metadata in the file is uploaded as-is**, so if you care about location data, strip it before uploading. Supported types are JPEG, PNG, GIF and WebP up to 20 MiB, and the file's contents must match its extension. Remote URLs are never fetched. Pass `--sha256` from `media preview` to have the upload refused if the file changed since you looked at it. Upload and post are separate operations, so a failed post never re-uploads the image:
 
 ```bash
-mkdir -p ~/openclaw/workspaces/jamie-assistant/skills
-mkdir -p ~/openclaw/workspaces/otto/skills
-
-ln -s /Users/jamie/Projects/mb/skills/mb-cli ~/openclaw/workspaces/jamie-assistant/skills/mb-cli
-ln -s /Users/jamie/Projects/mb/skills/mb-for-user-delegation ~/openclaw/workspaces/jamie-assistant/skills/mb-for-user-delegation
-
-ln -s /Users/jamie/Projects/mb/skills/mb-cli ~/openclaw/workspaces/otto/skills/mb-cli
-ln -s /Users/jamie/Projects/mb/skills/mb-agent-blogger ~/openclaw/workspaces/otto/skills/mb-agent-blogger
+mb media upload otter.jpg --alt "An otter on a rock"
+mb post new "Otter of the day" --photo-url URL_FROM_UPLOAD --alt "An otter on a rock"
 ```
 
-This gives each agent the same core `mb-cli` skill, but only one behavior skill:
+## Pipelines
 
-- Jamie's delegate agent uses `mb-cli` plus `mb-for-user-delegation`
-- Otto uses `mb-cli` plus `mb-agent-blogger`
-
-Avoid loading both behavior skills into the same agent, because they imply different authority and voice rules.
-
-If you prefer shared install locations, OpenClaw can also load skills from global directories such as `~/.openclaw/skills` or paths listed in `skills.load.extraDirs`. Per-agent workspaces are still the better fit when different agents need different behavior.
-
-## Commands
-
-### MCP
-
-```text
-mb mcp --consumer dot --read-only
-mb --profile work --blog https://work.micro.blog/ mcp --consumer openclaw
-```
-
-Install the optional `mcp` extra first. [Client examples](docs/mcp.md#client-examples) are provided for review; MB does not register them or change the existing installation.
-
-### Auth & Profiles
-
-```
-mb auth <token>              Store and verify a token
-mb whoami                    Show current user info
-mb profiles                  List configured profiles
-mb blogs                     List available blogs
-mb heartbeat                 Compact agent session snapshot
-mb inbox                     Attention-oriented mention triage
-mb catchup                   New timeline posts since last catchup
-mb checkpoint list           List saved workflow checkpoints
-mb media preview FILE --alt TEXT   Review under explicit --media-root DIR
-mb following                 List who you follow
-mb follow <username|->       Follow one or more users
-mb unfollow <username|->     Unfollow one or more users
-mb lookup users --last-post
-mb lookup posts --conversation
-mb discover --list
-mb discover --collection books
-```
-
-### Posting
-
-These examples work without an operation-ID option. For agent/script retries, add a stable `--operation-id task-42-create`, persist the exact arguments before invocation and reuse both. Use one shared state file for CLI/MCP. See [migration guidance](docs/migration-2.0.md).
-
-```
-mb post new "Hello world"
-mb post short "A small thought"
-mb post new --title "My Post" --content "Body text"
-mb post new --draft "Draft text"             Save as draft
-mb post short --strict-300 "A small thought"
-mb post new --file post.md                   Post from file (first # heading = title)
-mb --media-root ./reviewed media preview image.jpg --alt "desc"  # Upload separately after review
-mb post new "Caption" --photo-url https://...          Use a previously uploaded photo URL
-mb post new "Tagged text" --category tag                   Add category (repeatable)
-mb post new --dry-run "Hello world"          Validate without posting
-mb post get <id>                             Fetch a post by ID or URL
-mb post edit <id> --content "New text"       Edit post content
-mb post edit <id> --title "New Title"        Edit post title
-mb post edit <id> --category tag             Replace post categories
-mb post reply <id> "Reply text"
-mb post delete <id>
-mb post list
-mb post list --drafts
-echo "piped content" | mb post new -         Read from stdin
-```
-
-### Timeline
-
-```
-mb timeline                  Your following timeline
-mb timeline --count 50       Control result count
-mb timeline mentions         Your mentions
-mb timeline photos           Photo timeline
-mb timeline discover         Discover feed
-mb timeline discover --list  List curated Discover collections
-mb discover --collection books Topic discover feed alias
-mb timeline check --since <id>   Check for new posts
-mb timeline checkpoint           Print saved checkpoint ID
-mb timeline checkpoint <id>      Save checkpoint ID to config
-mb checkpoint list
-mb checkpoint get inbox
-mb checkpoint clear inbox
-mb heartbeat --count 3 --mention-count 3
-mb heartbeat --mentions-only
-mb heartbeat
-mb inbox --count 10
-mb inbox --reason thread-reply
-mb inbox --fresh-hours 24
-mb inbox --all
-mb inbox --advance
-mb catchup --count 20
-mb catchup --advance
-```
-
-### Conversations
-
-```
-mb conversation <id>         Fetch full thread from root to leaf
-```
-
-### Users
-
-```
-mb user show <username>
-mb user discover                Social suggestions from your network
-mb user discover <username>     Social suggestions seeded from another user's follows
-mb user following               List who you follow
-mb user following <username>    List who another user follows
-mb user follow <username>
-mb user follow -                Read usernames from stdin, one per line
-mb user unfollow <username>
-mb user unfollow -              Read usernames from stdin, one per line
-mb user is-following <username>
-mb user mute <username|keyword>
-mb user muting
-mb user unmute <id>
-mb user block <username>
-mb user blocking
-mb user unblock <id>
-```
-
-### Lookup
-
-```
-mb lookup users --last-post <username>
-mb lookup users --days-since-posting <username>
-mb lookup posts --post <id-or-url>
-mb lookup posts --conversation <id-or-url>
-mb user following | mb lookup users --last-post
-mb user following | mb lookup users --days-since-posting
+```bash
+# Expand the threads behind inbox items
 mb inbox | mb lookup posts --conversation -
+
+# Latest post from everyone you follow
+mb user following | mb lookup users --last-post
+
+# Unfollow accounts quiet for more than 90 days: review the list first, then act
+mb user following | mb lookup users --days-since-posting \
+  | awk '$2 ~ /^inactive_days=/ && substr($2, 15) + 0 > 90 { print $1 }' > quiet.txt
+cat quiet.txt
+mb unfollow - < quiet.txt
+
+# Follow the authors of book posts that mention poetry, after reviewing them
+mb discover --collection books --count 50 | grep -i poetry > poets.txt
+mb follow - < poets.txt
 ```
 
-### Blog
+`follow -` and `unfollow -` read one name per line and also accept agent-format post lines, taking the author's `@username`. Blank lines and lines starting with `#` are skipped, so you can comment out names in a reviewed file.
 
-```
-mb blog posts                List your blog posts
-mb blog posts --category tag Filter by category
-mb blog categories           List categories
-mb blog search "query"       Search your posts
-```
+## Skills for agents
+
+`skills/` holds agent skills. Use one operational skill, `mb-cli` (CLI) or `mb-mcp` (MCP), plus exactly one behavior skill: `mb-for-user-delegation` when acting for a person, or `mb-agent-blogger` when the agent posts on its own blog. Copy or symlink the folders into your agent's skills directory.
 
 ## Development
 
@@ -289,64 +324,8 @@ uv run --locked --extra mcp mypy src/mb --ignore-missing-imports
 uv run --locked --extra mcp pytest tests/ -q --cov=mb --cov-report=term-missing --cov-fail-under=70
 ```
 
-Tests use `httpx.MockTransport` — no live API calls required.
-
-Pipeline examples:
-
-```bash
-# Start an agent session with a bounded snapshot
-mb heartbeat
-
-# See what likely deserves a reply
-mb inbox
-
-# Focus only on fresh thread replies, without advancing the cursor
-mb inbox --reason thread-reply --fresh-hours 24
-
-# Read what is new on the timeline since the last catchup cursor
-mb catchup
-
-# Inspect or reset agent workflow checkpoints
-mb checkpoint list
-mb checkpoint clear heartbeat
-
-# Check for new activity and advance the heartbeat cursor
-mb heartbeat
-
-# Check the inbox and advance that cursor
-mb inbox --advance
-
-# Inspect the full thread behind an inbox item
-mb inbox --count 1 | mb lookup posts --conversation -
-
-# Inspect the latest post from everyone you follow
-mb user following | mb lookup users --last-post
-
-# Add inactivity metadata, then filter and unfollow in a later pipeline stage
-mb user following | mb lookup users --days-since-posting | awk '{split($2,a,"="); if (a[2] > 90) print $1}' | mb unfollow -
-
-# Discover topic posts, filter them, then follow the authors mentioned in the post lines
-mb discover --collection books --format agent | grep topic | mb follow -
-
-# Social suggestions from your network remain available under user discover
-mb user discover --format agent
-
-# Browse the curated Discover collections before choosing one
-mb discover --list
-
-# Upload an image first, then attach it to a post
-mb --media-root ./reviewed media preview otter.jpg --alt "An otter beside the water"
-# Save the reviewed hash; upload and save its returned URL before creating the post.
-mb --media-root ./reviewed media upload otter.jpg --alt "An otter beside the water" --sha256 REVIEWED_SHA --operation-id otter-upload-1
-img=RETURNED_UPLOAD_URL
-mb post new "An otter for today" --photo-url "$img" --alt "An otter beside the water"
-
-# Short-form publishing for conversational micro.blog posts
-mb post short "A small thought for today."
-```
+Tests use `httpx.MockTransport`; nothing touches the live API. See [AGENTS.md](AGENTS.md) for repository conventions, [RELEASE.md](RELEASE.md) for release notes, [docs/migration-2.0.md](docs/migration-2.0.md) if you used 1.x, and the design notes on [Homebrew packaging](docs/homebrew-release-plan.md) and a proposed [content index](docs/content-index-plan.md).
 
 ## License
 
-See [LICENSE](LICENSE) for details.
-
-Proposed next stages: [full-blog inventory and category maintenance](docs/content-index-plan.md) and [Homebrew distribution](docs/homebrew-release-plan.md).
+MIT. See [LICENSE](LICENSE).
