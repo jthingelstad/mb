@@ -138,12 +138,13 @@ def formats_and_pipelines(post_id: str) -> None:
         text("inbox", "inbox", "--all", fmt=fmt)
         text("doctor", "doctor", fmt=fmt)
     lines = run("timeline", "--count", "3", fmt="agent").stdout
-    text("timeline | lookup posts -", "lookup", "posts", "-", fmt="json", stdin=lines)
+    text("timeline | lookup posts -", "lookup", "posts", "-", "--post", fmt="json", stdin=lines)
     text(
         "names | lookup users -",
         "lookup",
         "users",
         "-",
+        "--last-post",
         fmt="json",
         stdin=f"# c\n\n{PUBLIC_USER}\n",
     )
@@ -215,7 +216,15 @@ def checkpoints(post_id: str) -> None:
     cli("timeline", "checkpoint")
     cli("heartbeat")
     cli("heartbeat", "--no-advance", "--mentions-only")
-    cli("inbox", "--advance")
+    # Advancing is refused while more mentions remain than were read; both outcomes are valid.
+    proc = run("inbox", "--advance")
+    result = json.loads(proc.stdout or "{}")
+    allowed = result.get("ok") is True or "truncated" in str(result.get("error"))
+    step(
+        "inbox --advance advances or refuses a truncated page",
+        allowed and clean(proc),
+        str(result.get("error")),
+    )
     cli("catchup", "--advance")
     cli("catchup")
     cli("checkpoint", "clear", "qa")
