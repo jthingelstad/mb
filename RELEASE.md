@@ -2,14 +2,16 @@
 
 The first release meant for public use, installable with `brew install jthingelstad/mb/mb`.
 
-- **Write recovery hardening.** Pending and unknown write receipts are reported consistently, and a person can now record the verified outcome with `mb operation-status ID --resolve applied|not_applied [--scope blog|reply] [--note TEXT]`. Resolution only updates the local receipt, is never automatic, and is not available over MCP.
+- **Write recovery hardening.** Ctrl-C or a killed process during a write now records the outcome as unknown instead of leaving a pending claim that blocks every later write. Failures before anything is sent are reported as `not_applied`, and a reply reads its thread before claiming the operation ID. A person can now record the verified outcome with `mb operation-status ID --resolve applied|not_applied [--scope blog|reply] [--note TEXT]`. Resolution only updates the local receipt, is never automatic, and is not available over MCP.
 - **`mb doctor [--offline]`.** A read-only health check: version, Python and install method, every `mb` on `PATH` and which one shadows the others, MCP availability, config permissions and profiles, token source, (online) token, blogs and destination, state file permissions, pending/unknown receipts with resolve hints, legacy checkpoints and media root. Exits 1 on any error.
 - **`mb --version` / `-V`.**
 - **`mb auth -`** reads the token from stdin so it stays out of shell history. `mb auth TOKEN` still works.
-- **Config safety.** Safer handling of the config file and its permissions.
+- **Config safety.** The config file is written atomically and created 0600 from the start; profile and checkpoint names are limited to letters, digits, `-` and `_`; an unreadable config gives a structured error with its path and line instead of a traceback. With `MB_TOKEN` set, the username comes from that token rather than the cached profile.
+- **Edits and results.** An edit with empty content is refused instead of blanking the post. A new post's result reports its `url`; the old `id` (the URL's last path segment, which no command accepted) is gone.
+- **CLI fixes.** `--format=json` style options work anywhere; an unknown `--format`/`MB_FORMAT` is an error instead of silently using JSON; `--count` is bounded 1 to 50 and `poll --interval` 1 to 3600; agent output decodes HTML entities.
 - **Images upload unchanged.** `mb media upload` / `mb upload` take any local JPEG, PNG, GIF or WebP up to 20 MiB and upload it exactly as provided; `--sha256` is optional and the CLI no longer needs `--media-root`. EXIF/GPS metadata is not stripped. The MCP image tools still require an absolute `--media-root`. The Pillow dependency is removed.
-- **Pipeline fixes.** Agent-format `coverage=` metadata goes to stderr; `mb lookup users` errors go to stderr with a non-zero exit; stdin readers skip blank lines and `#` comments.
-- **Legacy commands use the verified destination** for the selected blog.
+- **Pipeline fixes.** Agent-format `coverage=` metadata goes to stderr; `mb lookup users` and `mb lookup posts` errors go to stderr with a non-zero exit; stdin readers skip blank lines and `#` comments.
+- **Verified destination everywhere.** `post get`, `post list` and URL lookups in `lookup posts` verify the account and send the selected blog's canonical Micropub destination, like the other write and read services. `heartbeat --mentions-only` no longer advances the heartbeat checkpoint.
 - **MCP:** the default `--consumer` is now `default` (was `dot`). The missing-extra hint points at Homebrew and `uv tool install`.
 - **Docs rewritten for public release:** README, MCP contracts, migration notes, `mb guide`, `mb://guide`, skills and client examples (Claude Code, Claude Desktop, Codex, OpenClaw).
 - **Release-notes correction:** `mb notes`, documented in v1.0, was removed in 2.0. Use ordinary posts with a category instead.

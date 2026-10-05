@@ -140,15 +140,14 @@ The default `agent` format is compact plain text, one line per item:
 {
   "ok": true,
   "data": {
-    "url": "https://you.micro.blog/2026/10/05/hello.html",
-    "id": "hello.html"
+    "url": "https://you.micro.blog/2026/10/05/hello.html"
   },
   "operation_id": "cli-4889061347a74f679d58bacc1075c6a1",
   "outcome": "applied"
 }
 ```
 
-That is what `mb post new` returns. The post's address is `url`; for a new post `id` is just the last path segment of that URL, so use the URL when you edit, publish or delete it later. Errors look like `{"ok": false, "error": "...", "code": 400}`; rate limits add `retry_after`. Records go to stdout. Metadata lines such as `coverage=`, and per-item errors from `mb lookup users`, go to stderr so the next pipeline stage only sees records. A failed command exits non-zero.
+That is what `mb post new` returns. Address the new post by its `url` when you edit, publish or delete it later (`id` appears only when micro.blog returns a real numeric ID). Errors look like `{"ok": false, "error": "...", "code": 400}`; rate limits add `retry_after`. Records go to stdout. Metadata lines such as `coverage=`, and per-item errors from `mb lookup users` and `mb lookup posts`, go to stderr (those commands exit 1 if any lookup failed) so the next pipeline stage only sees records. A failed command exits non-zero.
 
 ## Command reference
 
