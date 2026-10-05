@@ -1,6 +1,6 @@
 ## mb v2.0.1
 
-The first release meant for public use, installable with `brew install jthingelstad/mb/mb`.
+The first release meant for public use, installable with `brew install jthingelstad/tap/mb`.
 
 - **Write recovery hardening.** Ctrl-C or a killed process during a write now records the outcome as unknown instead of leaving a pending claim that blocks every later write. Failures before anything is sent are reported as `not_applied`, and a reply reads its thread before claiming the operation ID. A person can now record the verified outcome with `mb operation-status ID --resolve applied|not_applied [--scope blog|reply] [--note TEXT]`. Resolution only updates the local receipt, is never automatic, and is not available over MCP.
 - **`mb doctor [--offline]`.** A read-only health check: version, Python and install method, every `mb` on `PATH` and which one shadows the others, MCP availability, config permissions and profiles, token source, (online) token, blogs and destination, state file permissions, pending/unknown receipts with resolve hints, legacy checkpoints and media root. Exits 1 on any error.

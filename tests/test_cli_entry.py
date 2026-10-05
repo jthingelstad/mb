@@ -106,7 +106,7 @@ def test_mcp_consumer_default_and_install_hint():
     with patch.dict("sys.modules", {"anyio": None}):
         missing = invoke(["mcp"])
     assert missing.exit_code == 1
-    assert "brew install jthingelstad/mb/mb" in missing.stderr
+    assert "brew install jthingelstad/tap/mb" in missing.stderr
     assert "uv tool install --from git+https://github.com/jthingelstad/mb 'mb[mcp]'" in (
         missing.stderr
     )
