@@ -165,7 +165,11 @@ async def smoke_posts(session: ClientSession) -> list[str]:
     urls = []
     for drafts in (False, True):
         result = await session.call_tool("blog_posts", {"count": 50, "drafts": drafts})
-        for item in ((result.structured_content or {}).get("data") or {}).get("items") or []:
+        content = result.structured_content or {}
+        if content.get("ok") is not True:
+            step("list the blog's posts for cleanup", False, str(content.get("error")))
+            continue
+        for item in (content.get("data") or {}).get("items") or []:
             if (item.get("content_text") or "").startswith(MARKER) and item.get("url"):
                 urls.append(item["url"])
     return list(dict.fromkeys(urls))
