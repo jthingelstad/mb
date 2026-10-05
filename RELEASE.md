@@ -1,4 +1,4 @@
-## mb v2.1.0 (unreleased)
+## mb v2.1.0
 
 - **Versioned results.** Every CLI `--format json` envelope and MCP result starts with `"schema_version": 1`. Adding a field keeps the version; removing, renaming or retyping one bumps it.
 - **Per-tool output schemas.** Each of the 23 MCP tools publishes the schema of its own result instead of one generic envelope, and [docs/mcp-schemas.json](docs/mcp-schemas.json) collects them. Tests validate real stdio results against them.
