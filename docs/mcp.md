@@ -88,7 +88,7 @@ Receipt scopes: Micropub writes (create, edit, delete, publish, upload) are scop
 
 Edit, delete and publish take an exact post URL or a native numeric ID. The resolved URL must belong to the selected blog and its Micropub source must load before anything is sent. A custom domain returned for the destination is accepted; ambiguous aliases and path traversal are refused. Replies use the native reply API and prepend the recipient's mention.
 
-To publish a draft, review `post_get` and pass its `source_hash` to `post_publish`. `mb` rereads the source, requires it to still be a draft with the same hash, and changes only `post-status`. The remote API has no compare-and-swap, so an edit landing between that check and the write is still possible.
+To publish a draft, review `post_get` and pass its `source_hash` to `post_publish`. `mb` rereads the source, requires it to still be a draft with the same hash, and changes only `post-status`. The remote API has no compare-and-swap, so an edit landing between that check and the write is still possible. Micro.blog gives a draft a new URL when it is published and retires the old one: the result's `url` is where the post now lives, and `draft_url` is the old one. Use `url` for any later read, edit or delete.
 
 ### CLI and MCP
 
@@ -118,4 +118,4 @@ Conversations by public URL use Micro.blog's `/conversation.js` JSON Feed endpoi
 
 ## Tests
 
-The suite uses synthetic HTTP and isolated config and state, including a subprocess running the real `mb mcp` command over stdio. It covers identity, attention paging and acknowledgement, independent consumers, stale receipts, rate limits and timeouts, duplicate prevention, read-only mode, images and draft publishing. No test touches the live API.
+The suite uses synthetic HTTP and isolated config and state, including a subprocess running the real `mb mcp` command over stdio. It covers identity, attention paging and acknowledgement, independent consumers, stale receipts, rate limits and timeouts, duplicate prevention, read-only mode, images and draft publishing. No test touches the live API. A separate scheduled workflow, `live-smoke`, runs the CLI and MCP against a dedicated Micro.blog test account, including a draft, edit, publish and delete cycle on its test blog.
