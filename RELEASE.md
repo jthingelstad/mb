@@ -1,3 +1,10 @@
+## mb v2.2.1
+
+- **Publishing a draft reports the post's new URL.** Micro.blog moves a draft to a new URL when it is published and the draft URL stops resolving. `post_publish` and `mb post publish` used to report the old URL, so a following read, edit or delete found nothing. The result's `url` is now the published address Micro.blog returns (accepted only on the selected blog), and `draft_url` holds the retired one. The `post_publish` output schema adds `draft_url`.
+- **Live smoke test.** A scheduled workflow exercises a dedicated Micro.blog test account end to end: guided `mb auth` in a pseudo-terminal, CLI reads and `mb doctor`, every MCP read validated against its schema, and a draft, edit, publish and delete cycle. Its first run found the bug above. A full suite (`-f suite=full`) covers every read command in each output format, the stdin pipelines, refusal paths, checkpoints and the whole CLI post lifecycle; it passed 151 checks against the test account before this release.
+
+---
+
 ## mb v2.2.0
 
 - **Guided sign-in.** Run bare `mb auth` in a terminal: it links the micro.blog app token page, reads the token without echoing it, checks it, and asks again (up to three times) when micro.blog rejects it. A network or server failure is reported instead of re-prompting. If the account can post to more than one blog, it lists them and asks which to use, defaulting to the profile's current blog or the account default; `--blog` skips the question. It saves the profile and prints next steps (`mb doctor`, `mb heartbeat`, adding the MCP server to Claude Code). Prompts go to stderr, and the result envelope still goes to stdout.

@@ -159,7 +159,7 @@ mb unfollow <username|->
 - Use one persistent state file (`--state-file`) shared with any MCP client on the same account.
 - After `outcome=unknown`, run the printed `mb operation-status ...` command (or `mb operation-status --latest`) and read back from micro.blog. Do not resend. Recording the verified outcome with `mb operation-status ID --resolve applied|not_applied` is the human's decision; propose it, don't run it on your own judgment.
 - `mb doctor` lists pending and unknown receipts with resolve hints.
-- Edit, delete and publish need an exact owned URL or numeric ID. To publish a draft: `mb post get URL --format json`, review the source, then `mb post publish URL --source-hash HASH --operation-id ID`.
+- Edit, delete and publish need an exact owned URL or numeric ID. To publish a draft: `mb post get URL --format json`, review the source, then `mb post publish URL --source-hash HASH --operation-id ID`. Publishing moves the post to a new URL; use the result's `url` afterwards (`draft_url` is the retired one).
 
 ## Images
 
