@@ -1,6 +1,5 @@
 """HTTP client for micro.blog. Accepts base_url override for testing."""
 
-from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -479,19 +478,6 @@ class MicroblogClient:
                 processing_pending=resp.status_code == 202,
             )
         return result
-
-    def micropub_upload_photo(self, filepath: str, alt: str | None = None) -> dict:
-        """Upload a photo to the media endpoint, return its URL."""
-        from mb.media import ImageInputError, load_image
-
-        path = Path(filepath).absolute()
-        try:
-            metadata, content = load_image(path.parent, path.name)
-        except ImageInputError as exc:
-            return {"ok": False, "error": str(exc), "code": 400}
-        return self.micropub_upload_bytes(
-            metadata["filename"], content, alt=alt, content_type=metadata["mime_type"]
-        )
 
     def _handle_micropub_response(
         self, resp: httpx.Response, *, require_location: bool = False

@@ -115,7 +115,7 @@ def _exit_on_invalid_format(fmt: str, source: str = "--format") -> None:
 app = typer.Typer(
     cls=_FlexibleGroup, add_completion=False, no_args_is_help=True, rich_markup_mode=None
 )
-app.add_typer(media.app, name="media", help="Preview and upload reviewed local images")
+app.add_typer(media.app, name="media", help="Preview and upload local images unchanged")
 app.add_typer(post.app, name="post", help="Publishing commands")
 app.add_typer(timeline.app, name="timeline", help="Reading/discovery commands")
 app.add_typer(user.app, name="user", help="Social graph commands")
@@ -169,7 +169,9 @@ def main(
         None, "--state-file", help="Shared local operation receipts"
     ),
     media_root: str | None = typer.Option(
-        None, "--media-root", help="Explicit allowed local image directory"
+        None,
+        "--media-root",
+        help="Absolute directory that MCP image tools may read (optional for the CLI)",
     ),
     show_version: bool = typer.Option(
         False, "--version", "-V", help="Print the mb version and exit"
@@ -194,6 +196,14 @@ def main(
     config.validate_name("profile", profile)
     ctx.obj["profile"] = profile
     ctx.obj["state_file"] = state_file
+    if media_root is not None:
+        from mb.media import ImageInputError, resolve_media_root
+
+        try:
+            media_root = str(resolve_media_root(media_root))
+        except ImageInputError as exc:
+            output({"ok": False, "error": str(exc), "code": 400}, fmt)
+            raise SystemExit(2) from None
     ctx.obj["media_root"] = media_root
     if blog_name:
         ctx.obj["blog"] = blog_name
@@ -409,16 +419,18 @@ def catchup(
 @app.command()
 def upload(
     ctx: typer.Context,
-    source: str = typer.Argument(..., help="Reviewed relative image under --media-root"),
+    source: str = typer.Argument(..., help="Local image path (relative to --media-root if set)"),
     alt: str = typer.Option(None, "--alt", help="Alt text for the uploaded image"),
-    sha256: str | None = typer.Option(None, "--sha256", help="Input hash from media preview"),
+    sha256: str | None = typer.Option(
+        None, "--sha256", help="Optional hash from media preview; refuses a changed file"
+    ),
     operation_id: str | None = typer.Option(
         None,
         "--operation-id",
         help="Optional stable retry ID; omitted IDs start a new saved operation",
     ),
 ):
-    """Alias for media upload; requires the reviewed hash and alt text."""
+    """Alias for media upload: send a local image unchanged, with alt text."""
     upload_cmd.run(ctx, source=source, alt=alt, sha256=sha256, operation_id=operation_id)
 
 

@@ -165,6 +165,7 @@ class MicroblogService:
         state_path: Path,
         read_only: bool = False,
         media_root: Path | None = None,
+        local_files: bool = False,
     ):
         self.client = client
         self.profile = profile
@@ -173,6 +174,8 @@ class MicroblogService:
         self.state = StateStore(state_path)
         self.read_only = read_only
         self.media_root = media_root
+        # The CLI may read any path its user names; MCP stays inside --media-root.
+        self.local_files = local_files
         self._identity: Identity | None = None
         self._blog_urls: tuple[str, ...] = ()
         self._receipts: dict[str, dict] = {}
@@ -657,8 +660,16 @@ class MicroblogService:
             result["data"]["dry_run"] = True
         return result
 
+    def load_media(self, file: str) -> tuple[dict, bytes]:
+        """Read an image exactly as stored; raises ImageInputError."""
+        from mb.media import load_image, load_local_image
+
+        if self.local_files and self.media_root is None:
+            return load_local_image(file)
+        return load_image(self.media_root, file)
+
     def media_preview(self, file: str, alt: str) -> dict:
-        from mb.media import ImageInputError, load_image
+        from mb.media import ImageInputError
 
         if not alt.strip():
             return failure("Provide descriptive alt text for the image")
@@ -666,12 +677,18 @@ class MicroblogService:
         if not identity["ok"]:
             return identity
         try:
-            metadata, _ = load_image(self.media_root, file)
+            metadata, _ = self.load_media(file)
         except ImageInputError as exc:
             return failure(str(exc))
         return {
             "ok": True,
-            "data": {**metadata, "alt": alt, "identity": identity["data"], "dry_run": True},
+            "data": {
+                **metadata,
+                "alt": alt,
+                "destination": identity["data"].get("blog"),
+                "identity": identity["data"],
+                "dry_run": True,
+            },
         }
 
     def write(self, action: str, operation_id: str, arguments: dict) -> dict:
@@ -702,10 +719,12 @@ class MicroblogService:
                 "reuse both on retries. Never generate a fresh ID to retry an uncertain write.",
                 outcome="not_applied",
             )
-        if action == "media_upload" and not re.fullmatch(
-            r"[a-f0-9]{64}", arguments.get("sha256", "")
-        ):
-            return failure("Upload requires the sha256 from a reviewed media_preview")
+        if action == "media_upload":
+            supplied = arguments.get("sha256") or ""
+            if supplied and not re.fullmatch(r"[a-f0-9]{64}", supplied):
+                return failure("sha256 must be 64 lowercase hexadecimal characters")
+            if not supplied and not self.local_files:
+                return failure("Upload requires the sha256 from a reviewed media_preview")
         if action == "post_publish" and not re.fullmatch(
             r"[a-f0-9]{64}", arguments.get("source_hash", "")
         ):
@@ -741,15 +760,15 @@ class MicroblogService:
             return previous
         media = None
         if action == "media_upload":
-            from mb.media import ImageInputError, load_image
+            from mb.media import ImageInputError
 
             if not arguments["alt"].strip():
                 return failure("Provide descriptive alt text for the image")
             try:
-                metadata, content = load_image(self.media_root, arguments["file"])
+                metadata, content = self.load_media(arguments["file"])
             except ImageInputError as exc:
                 return failure(str(exc), outcome="not_applied")
-            if metadata["sha256"] != arguments["sha256"]:
+            if arguments.get("sha256") and metadata["sha256"] != arguments["sha256"]:
                 return failure(
                     "Image changed since preview; review it again", 409, outcome="not_applied"
                 )
@@ -879,7 +898,7 @@ class MicroblogService:
         stored["data"] = {
             k: str(v)
             for k, v in result.get("data", {}).items()
-            if k in {"url", "id", "sha256", "upload_sha256", "mime_type", "upload_status"}
+            if k in {"url", "id", "sha256", "mime_type", "upload_status"}
             and isinstance(v, (str, int))
             and not isinstance(v, bool)
             and not (isinstance(token, str) and token and token in str(v))

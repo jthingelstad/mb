@@ -212,7 +212,7 @@ CATALOG: dict[str, tuple[type[Input], str]] = {
     ),
     "media_preview": (
         MediaPreview,
-        "Validate a relative local static image under the explicitly enabled media directory. Show dimensions, upload hash, alt text and selected destination without uploading.",
+        "Check a relative JPEG, PNG, GIF or WebP file under the explicitly enabled media directory. Show file name, type, byte count, sha256, alt text and selected destination without uploading. The bytes are uploaded unchanged, including any embedded metadata.",
     ),
     "media_upload": (
         MediaUpload,

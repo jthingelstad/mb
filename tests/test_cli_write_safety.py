@@ -26,6 +26,7 @@ class Harness:
         self.outcome = outcome
         self.unavailable = False
         self.draft = False
+        self.media_root = tmp_path
 
     @property
     def writes(self):
@@ -90,7 +91,13 @@ class Harness:
             base_url="https://micro.blog", transport=httpx.MockTransport(respond)
         )
         service = MicroblogService(
-            client, profile, blog, "cli", self.path / "receipts.sqlite", media_root=self.path
+            client,
+            profile,
+            blog,
+            "cli",
+            self.path / "receipts.sqlite",
+            media_root=self.media_root,
+            local_files=True,
         )
         with ExitStack() as stack:
             stack.enter_context(client)
@@ -148,11 +155,13 @@ def test_generated_uncertain_receipt_has_readonly_recovery(tmp_path, outcome):
     assert retry["outcome"] == "unknown" and len(harness.writes) == 1
 
 
-def test_missing_upload_hash_still_refuses_without_dispatch(tmp_path):
+@pytest.mark.parametrize("sha256", ["0" * 64, "not-a-hash"])
+def test_wrong_or_malformed_upload_hash_refuses_without_dispatch(tmp_path, sha256):
+    (tmp_path / "image.png").write_bytes(image_bytes())
     harness = Harness(tmp_path)
-    _, data = harness.invoke(["upload", "image.png", "--alt", "Blue"])
-    assert not data["ok"] and "sha256" in data["error"]
-    assert harness.requests == [] and not (tmp_path / "receipts.sqlite").exists()
+    _, data = harness.invoke(["upload", "image.png", "--alt", "Blue", "--sha256", sha256])
+    assert not data["ok"] and data["code"] in {400, 409}
+    assert not harness.writes and not (tmp_path / "receipts.sqlite").exists()
 
 
 @pytest.mark.parametrize("command", [["operation-status"], ["operation-status", "id", "--latest"]])

@@ -1,103 +1,132 @@
-"""Bounded raster-image access. MCP exposes only an explicitly allowed directory."""
+"""Local image access. Uploads send the user's bytes unchanged; MCP reads only under --media-root."""
 
+import errno
 import hashlib
-import io
 import os
 import stat
-import warnings
 from pathlib import Path
 
-from PIL import Image, ImageOps
-
 MAX_BYTES = 20 * 1024 * 1024
-MAX_PIXELS = 40_000_000
-FORMATS = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP"}
+FORMATS = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+_NAMES = {"image/jpeg": "JPEG", "image/png": "PNG", "image/gif": "GIF", "image/webp": "WebP"}
+SUPPORTED = "Supported images are JPEG (.jpg, .jpeg), PNG, GIF and WebP files"
 
 
 class ImageInputError(ValueError):
     pass
 
 
+def resolve_media_root(value: str) -> Path:
+    """Resolve an explicit media root once, so the root itself may be a symlink."""
+    if "\0" in value:
+        raise ImageInputError("--media-root contains a NUL byte")
+    if not os.path.isabs(value):
+        raise ImageInputError("--media-root must be an absolute directory path")
+    return Path(os.path.realpath(value))
+
+
+def sniff(raw: bytes) -> str | None:
+    """Return the image MIME type that the leading bytes identify, if any."""
+    if raw.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if raw[:6] in {b"GIF87a", b"GIF89a"}:
+        return "image/gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _mime_type(file: str) -> str:
+    if "\0" in file:
+        raise ImageInputError("Image path contains a NUL byte")
+    if file.lower().startswith(("http://", "https://")):
+        raise ImageInputError("MB does not fetch remote images; save the image locally first")
+    mime_type = FORMATS.get(Path(file).suffix.lower())
+    if mime_type is None:
+        raise ImageInputError(SUPPORTED)
+    return mime_type
+
+
+def _read_regular(fd: int) -> bytes:
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= MAX_BYTES:
+        os.close(fd)
+        raise ImageInputError("Image must be a non-empty regular file of at most 20 MiB")
+    with os.fdopen(fd, "rb") as stream:
+        raw = stream.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        raise ImageInputError("Image exceeds 20 MiB")
+    return raw
+
+
+def _describe(file: str, mime_type: str, raw: bytes) -> tuple[dict, bytes]:
+    found = sniff(raw)
+    if found != mime_type:
+        actual = f"{_NAMES[found]} data" if found else "no recognized image data"
+        raise ImageInputError(
+            f"{Path(file).name} contains {actual}, but its extension says "
+            f"{_NAMES[mime_type]}; the extension must match the file contents"
+        )
+    return {
+        "file": file,
+        "filename": Path(file).name,
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "byte_count": len(raw),
+        "mime_type": mime_type,
+    }, raw
+
+
+def load_local_image(file: str) -> tuple[dict, bytes]:
+    """Read any local image path the CLI user named, exactly as stored."""
+    mime_type = _mime_type(file)
+    try:
+        fd = os.open(file, os.O_RDONLY | os.O_NONBLOCK)
+    except OSError as exc:
+        if exc.errno == errno.ENOENT:
+            raise ImageInputError("Image file not found") from None
+        raise ImageInputError("Image file is not readable") from None
+    return _describe(file, mime_type, _read_regular(fd))
+
+
 def load_image(root: Path | None, file: str) -> tuple[dict, bytes]:
-    """Open relative regular files without following child symlinks, then decode/re-encode."""
+    """Open a relative regular file under the media root without following child symlinks."""
     path = Path(file)
     if root is None:
         raise ImageInputError(
             "Local images are disabled; start with an explicit --media-root directory"
         )
+    if "\0" in file:
+        raise ImageInputError("Image path contains a NUL byte")
     if path.is_absolute() or not path.parts or any(p in {"..", "."} for p in path.parts):
         raise ImageInputError("Use a relative image path within the allowed media directory")
-    expected = FORMATS.get(path.suffix.lower())
-    if expected is None:
-        raise ImageInputError("Supported local images are static JPEG, PNG and WebP")
-    fd = None
+    mime_type = _mime_type(file)
     try:
-        fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        # The root was resolved once at startup and may itself be a symlink.
+        fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    except OSError:
+        raise ImageInputError("Media root is unavailable or not a directory") from None
+    try:
         for part in path.parts[:-1]:
             next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
             os.close(fd)
             fd = next_fd
         image_fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
-        with os.fdopen(image_fd, "rb") as stream:
-            info = os.fstat(stream.fileno())
-            if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= MAX_BYTES:
-                raise ImageInputError("Image must be a regular file of at most 20 MiB")
-            raw = stream.read(MAX_BYTES + 1)
-            if len(raw) > MAX_BYTES:
-                raise ImageInputError("Image exceeds 20 MiB")
-    except OSError:
-        raise ImageInputError(
-            "Image is unavailable or crosses a symlink outside the allowed directory"
-        ) from None
+    except OSError as exc:
+        if exc.errno == errno.ENOENT:
+            raise ImageInputError("Image not found under the media root") from None
+        if exc.errno in {errno.ELOOP, errno.ENOTDIR}:
+            raise ImageInputError(
+                "Image path crosses a symlink or non-directory inside the media root"
+            ) from None
+        raise ImageInputError("Image under the media root is not readable") from None
     finally:
-        if fd is not None:
-            os.close(fd)
-    return normalize_image(raw, file)
-
-
-def normalize_image(raw: bytes, file: str) -> tuple[dict, bytes]:
-    path = Path(file)
-    expected = FORMATS.get(path.suffix.lower())
-    if expected is None or not 0 < len(raw) <= MAX_BYTES:
-        raise ImageInputError(
-            "Supported local images are static JPEG, PNG and WebP of at most 20 MiB"
-        )
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(io.BytesIO(raw)) as image:
-                if image.format != expected or image.width * image.height > MAX_PIXELS:
-                    raise ImageInputError(
-                        "Image format does not match its extension or exceeds 40 megapixels"
-                    )
-                if getattr(image, "n_frames", 1) != 1:
-                    raise ImageInputError("Animated images are not supported in this candidate")
-                image.load()
-                oriented = ImageOps.exif_transpose(image)
-                # Fresh pixels omit EXIF, comments, text chunks and any appended payload.
-                clean = Image.new("RGB" if expected == "JPEG" else "RGBA", oriented.size)
-                clean.paste(oriented.convert(clean.mode))
-                encoded = io.BytesIO()
-                output_format = "JPEG" if expected == "JPEG" else "PNG"
-                clean.save(
-                    encoded,
-                    format=output_format,
-                    **({"quality": 95} if output_format == "JPEG" else {}),
-                )
-                content = encoded.getvalue()
-                if len(content) > MAX_BYTES:
-                    raise ImageInputError("Normalized image exceeds 20 MiB")
-                suffix = ".jpg" if output_format == "JPEG" else ".png"
-                return {
-                    "file": file,
-                    "filename": path.stem + suffix,
-                    "sha256": hashlib.sha256(raw).hexdigest(),
-                    "upload_sha256": hashlib.sha256(content).hexdigest(),
-                    "byte_count": len(content),
-                    "width": clean.width,
-                    "height": clean.height,
-                    "mime_type": "image/jpeg" if output_format == "JPEG" else "image/png",
-                    "metadata_removed": True,
-                }, content
-    except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
-        raise ImageInputError("Image is invalid, oversized or unsupported") from None
+        os.close(fd)
+    return _describe(file, mime_type, _read_regular(image_fd))

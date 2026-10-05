@@ -1375,11 +1375,13 @@ class TestTopLevelPipelineAliases:
 
 
 class TestUpload:
-    @pytest.mark.parametrize("source", ["/tmp/otter.jpg", "https://example.com/otter.jpg"])
-    def test_legacy_upload_refused_without_auth_or_network(self, source):
+    @pytest.mark.parametrize(
+        "source", ["https://example.com/otter.jpg", "http://example.com/otter.jpg"]
+    )
+    def test_remote_upload_refused_without_auth_or_network(self, source):
         with patch("mb.config.get_token", side_effect=AssertionError("No credential lookup")):
-            result = runner.invoke(app, ["--format", "json", "upload", source])
+            result = runner.invoke(app, ["--format", "json", "upload", source, "--alt", "Otter"])
         assert result.exit_code == 1
         data = json.loads(result.output)
         assert data["outcome"] == "not_applied"
-        assert "media preview" in data["error"]
+        assert "does not fetch remote images" in data["error"]
