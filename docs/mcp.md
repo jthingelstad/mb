@@ -22,16 +22,32 @@ Before serving any tool, the process verifies the account and resolves the canon
 
 `--consumer` (default `default`) names an independent reader: each consumer has its own attention checkpoints, so several clients can share one account. `--read-only` disables remote writes and local checkpoint acknowledgement.
 
-`--state-file` selects the SQLite file for checkpoints and write receipts, default `~/.config/mb/mcp-state.sqlite3`, created with mode 0600. It stores checkpoint IDs, revisions, hashed operation arguments and recovery metadata; it never stores tokens or post bodies. Use one state file for every CLI script and MCP client that writes to the same account, since separate files cannot coordinate writes. CLI config checkpoints (`mb checkpoint`) are separate from MCP consumer checkpoints.
+`--state-file` selects the SQLite file for checkpoints and write receipts, default `~/.config/mb/state.sqlite3`, created with mode 0600. MB 2.0 named it `mcp-state.sqlite3`; that file is still used when it is the only one present. It stores checkpoint IDs, revisions, hashed operation arguments and recovery metadata; it never stores tokens or post bodies. Use one state file for every CLI script and MCP client that writes to the same account, since separate files cannot coordinate writes. CLI config checkpoints (`mb checkpoint`) are separate from MCP consumer checkpoints.
 
-Requests are serialized within a process, reads run off the protocol event loop, and pending SQLite claims stop concurrent writes across processes sharing a state file. Results keep the CLI envelope (`ok`, `data`, `error`, `code`) and also set `isError`, recovery fields and structured content. Numeric post IDs are decimal strings. Tool inputs reject unknown fields, and every tool carries read, write or destructive annotations.
+Requests are serialized within a process, reads run off the protocol event loop, and pending SQLite claims stop concurrent writes across processes sharing a state file. Results keep the CLI envelope (`schema_version`, `ok`, `data`, `error`, `code`) and also set `isError`, recovery fields and structured content. Numeric post IDs are decimal strings. Tool inputs reject unknown fields, and every tool carries read, write or destructive annotations.
+
+## Results and schemas
+
+Every result starts with `"schema_version": 1`, in MCP and in the CLI's `--format json`. Each tool publishes its own output schema, and [mcp-schemas.json](mcp-schemas.json) has all of them in one file (regenerate with `uv run python scripts/export_schemas.py`; a test fails when it is stale).
+
+Stability policy: adding a field, or a new value for a string field, keeps the version. Removing, renaming or retyping a field bumps it. Clients should ignore fields they do not know.
+
+Reads are compact by default. A post is:
+
+```json
+{"id": "98671022", "url": "https://…", "author_username": "jamie", "author_name": "Jamie",
+ "date_published": "2026-10-05T02:17:36+00:00", "content_text": "…",
+ "links": ["https://…"], "images": ["https://…"], "is_conversation": true}
+```
+
+`links`, `images`, `is_conversation` and `is_mention` appear only when they apply. Posts from your own blog (`blog_posts`, `blog_search`) carry `title`, `status`, `tags` and a 500-character `content_text` excerpt with `content_truncated`; read `post_get` for the full source. `profile_get` adds a flat `profile` (name, bio, counts, `is_following`). Compact results leave out the HTML, the upstream `author` and `_microblog` blocks, feed metadata, the repeated `identity`, and internal checkpoint revisions. Pass `verbose: true` to any read tool for all of it. In practice compact results are about a third of the verbose size. The CLI's JSON output is always the full shape.
 
 ## Tools and resources
 
 | Tool | Purpose |
 | --- | --- |
 | `identity` | Verify account, canonical blog, consumer and read-only mode |
-| `heartbeat` | Compact timeline and recent-mention summary |
+| `heartbeat` | Timeline snapshot and recent-mention summary |
 | `inbox`, `catchup` | Consumer-scoped attention windows |
 | `timeline`, `conversation` | Bounded timeline; threads by native ID or public URL |
 | `discover`, `profile_get`, `replies` | Bounded account-scoped social reads |
@@ -50,9 +66,9 @@ Resources: `mb://guide` (the packaged operating guide), `mb://identity` and `mb:
 
 Start with `identity`, then `heartbeat`. Use `inbox` and `conversation` for mentions that deserve attention and `catchup` for a fuller timeline read. Follow `next_cursor` until it is absent. Only a completely consumed window returns an `ack_receipt`; pass it to `checkpoint_ack` after reviewing the items. Reads never advance a checkpoint. Receipts are revision-checked, so a stale receipt conflicts after another acknowledgement, and retrying the same acknowledgement is harmless. Cursors and receipts live in memory and expire on restart; reread from the durable checkpoint.
 
-The first `heartbeat` returns a bounded recent baseline. Acknowledging it starts from the newest returned item without claiming historical coverage. A first `catchup` can page through available history. Heartbeat's mention sample is informational; `inbox` owns mention progress.
+The first `heartbeat` returns a bounded recent baseline of 3 posts. Acknowledging it starts from the newest returned item without claiming historical coverage. Later heartbeats page 20 posts at a time since the checkpoint; pass `count` to choose another page size. A first `catchup` can page through available history. Heartbeat's mention sample is informational; `inbox` owns mention progress.
 
-Timeline and attention keep Micro.blog's native feed order. IDs are opaque anchors, not numbers to compare: a newer post can have a smaller ID. A window freezes its newest item as the upper fence and pages back until the feed is exhausted or the exact saved anchor is reached, refusing overlapping pages. The mentions API and Micropub source listings only cover a recent window. If a saved inbox checkpoint is older than that window, the result says `coverage_complete=false` and no acknowledgement is offered: report the gap instead of claiming nothing happened.
+Timeline and attention keep Micro.blog's native feed order. IDs are opaque anchors, not numbers to compare: a newer post can have a smaller ID. A window freezes its newest item as the upper fence and pages back until the feed is exhausted or the exact saved anchor is reached, refusing overlapping pages. The mentions API and Micropub source listings only cover a recent window. If a saved inbox checkpoint is older than that window, the result says `anchor_missing=true` and `coverage_complete=false`, and no acknowledgement is offered: report the gap instead of claiming nothing happened. Those older mentions can no longer be read. Once the person agrees to move on, read `inbox` with `rebaseline: true`. The recent window then counts as complete, and its `ack_receipt` moves the checkpoint to the newest mention; `checkpoint_ack` reports `rebaselined: true` and the `previous_checkpoint`, so the gap is on record. `rebaseline` changes nothing while the saved mention is still in the window.
 
 Checkpoints acknowledged by this version carry native-order provenance. A saved checkpoint without matching provenance (for example, one written by an older client) is reported with `checkpoint_review_required=true` and `coverage=legacy-checkpoint-review-required`. It can still be inspected but gets no completeness claim or acknowledgement receipt. `mb doctor` lists such checkpoints. To move on, review history around the saved anchor and start a new consumer from a fresh baseline; `mb` never resets or migrates old checkpoints on its own.
 

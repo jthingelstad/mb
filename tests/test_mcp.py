@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import jsonschema
 import pytest
 
 pytest.importorskip("mcp")
@@ -50,9 +51,15 @@ async def test_stdio_complete_agent_session(tmp_path):
             assert delete.annotations.destructive_hint is True
             assert delete.annotations.read_only_hint is False
 
+            schemas = {tool.name: tool.output_schema for tool in tools}
+            for schema in schemas.values():
+                jsonschema.Draft202012Validator.check_schema(schema)
+
             async def call(name, args=None):
                 result = await session.call_tool(name, args or {})
                 assert result.structured_content == json.loads(result.content[0].text)
+                assert result.structured_content["schema_version"] == 1
+                jsonschema.validate(result.structured_content, schemas[name])
                 return result
 
             identity = (await call("identity")).structured_content["data"]
@@ -64,6 +71,30 @@ async def test_stdio_complete_agent_session(tmp_path):
             resource_identity = await session.read_resource("mb://identity")
             assert json.loads(resource_identity.contents[0].text)["data"] == identity
             assert (await session.read_resource("mb://discover-collections")).contents
+            for name, args in [
+                ("timeline", {"count": 3}),
+                ("discover", {}),
+                ("replies", {}),
+                ("profile_get", {"username": "agent"}),
+                ("blog_categories", {}),
+                ("blog_search", {"query": "post"}),
+            ]:
+                for verbose in (False, True):
+                    result = await call(name, {**args, "verbose": verbose})
+                    assert not result.is_error, (name, result.structured_content)
+            compact = (await call("timeline", {"count": 1})).structured_content["data"]
+            assert set(compact["items"][0]) <= {
+                "id",
+                "url",
+                "author_username",
+                "author_name",
+                "date_published",
+                "content_text",
+                "links",
+                "images",
+                "is_conversation",
+                "is_mention",
+            }
             assert (await call("heartbeat")).structured_content["data"]["mentions"]
             assert (await call("inbox")).structured_content["data"]["items"][0][
                 "reason"

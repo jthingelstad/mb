@@ -90,8 +90,10 @@ def _human_post_table(console: Console, title: str, items: list[dict]) -> None:
 
 
 def output_json(data: dict) -> None:
-    """Print a JSON envelope to stdout."""
-    json.dump(data, sys.stdout, indent=2)
+    """Print a versioned JSON envelope to stdout."""
+    from mb.shapes import versioned
+
+    json.dump(versioned(data), sys.stdout, indent=2)
     sys.stdout.write("\n")
 
 

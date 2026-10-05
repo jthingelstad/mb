@@ -243,7 +243,7 @@ async def test_mcp_redacts_nested_keys_and_untrusted_validation_locations(tmp_pa
     ]
     adapter = Adapter(lambda: service)
     result = await adapter.call_tool(
-        None, types.CallToolRequestParams(name="timeline", arguments={"count": 1})
+        None, types.CallToolRequestParams(name="timeline", arguments={"count": 1, "verbose": True})
     )
     assert result.structured_content == json.loads(result.content[0].text)
     assert "synthetic-secret" not in str(result)

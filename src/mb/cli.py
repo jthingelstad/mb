@@ -525,7 +525,7 @@ def mcp_command(
     profile = get_profile(ctx)
     blog_dest = ctx.obj.get("blog")
     state_file = ctx.obj.get("state_file")
-    state_path = Path(state_file) if state_file else config.CONFIG_DIR / "mcp-state.sqlite3"
+    state_path = Path(state_file) if state_file else config.default_state_path()
 
     def service_factory():
         token = config.get_token(profile=profile)

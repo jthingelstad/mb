@@ -124,7 +124,7 @@ Select one with `--profile work` (or `-p work`); add a profile with `mb --profil
 | `MB_BLOG` | Default blog destination; `--blog` still wins |
 | `MB_FORMAT` | Default output format: `agent`, `json` or `human` |
 
-Write receipts and MCP read checkpoints live in `~/.config/mb/mcp-state.sqlite3` (0600). Use `--state-file PATH` to choose another file, and point every CLI script and MCP client that writes to the same account at the same file.
+Write receipts and MCP read checkpoints live in `~/.config/mb/state.sqlite3` (0600; MB 2.0's `mcp-state.sqlite3` keeps being used if it is the only one). Use `--state-file PATH` to choose another file, and point every CLI script and MCP client that writes to the same account at the same file.
 
 ## Output formats
 
@@ -138,6 +138,7 @@ The default `agent` format is compact plain text, one line per item:
 
 ```json
 {
+  "schema_version": 1,
   "ok": true,
   "data": {
     "url": "https://you.micro.blog/2026/10/05/hello.html"
@@ -147,7 +148,7 @@ The default `agent` format is compact plain text, one line per item:
 }
 ```
 
-That is what `mb post new` returns. Address the new post by its `url` when you edit, publish or delete it later (`id` appears only when micro.blog returns a real numeric ID). Errors look like `{"ok": false, "error": "...", "code": 400}`; rate limits add `retry_after`. Records go to stdout. Metadata lines such as `coverage=`, and per-item errors from `mb lookup users` and `mb lookup posts`, go to stderr (those commands exit 1 if any lookup failed) so the next pipeline stage only sees records. A failed command exits non-zero.
+That is what `mb post new` returns. Address the new post by its `url` when you edit, publish or delete it later (`id` appears only when micro.blog returns a real numeric ID). Errors look like `{"schema_version": 1, "ok": false, "error": "...", "code": 400}`; rate limits add `retry_after`. `schema_version` changes only when a field is removed, renamed or retyped; new fields can appear at any time (see [docs/mcp.md](docs/mcp.md#results-and-schemas)). Records go to stdout. Metadata lines such as `coverage=`, and per-item errors from `mb lookup users` and `mb lookup posts`, go to stderr (those commands exit 1 if any lookup failed) so the next pipeline stage only sees records. A failed command exits non-zero.
 
 ## Command reference
 

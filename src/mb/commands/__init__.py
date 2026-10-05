@@ -161,9 +161,7 @@ def get_service(ctx: typer.Context, client=None):
         get_profile(ctx),
         client.default_destination,
         "cli",
-        Path(options["state_file"])
-        if options.get("state_file")
-        else config.CONFIG_DIR / "mcp-state.sqlite3",
+        Path(options["state_file"]) if options.get("state_file") else config.default_state_path(),
         media_root=Path(options["media_root"]) if options.get("media_root") else None,
         local_files=True,
     )

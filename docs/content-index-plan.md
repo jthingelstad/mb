@@ -13,7 +13,7 @@ MB serves both a human using a local agent and an agent managing its own identit
 
 Build one `inventory` service for CLI/MCP with a bounded page contract, destination identity, remote offsets, counts, source hashes, run ID and coverage. Expose progress and resume incomplete scans; reject repeated/nonprogressing pages, malformed pages and arbitrary limits before marking a run exhausted. Offset pagination has no documented snapshot isolation: insertions/deletions during a scan can shift rows. Deduplicate stable URLs, overlap pages, recheck the leading fence and reconcile with a second pass/export. Label a best-effort exhausted scan as such; do not call it an atomic snapshot.
 
-Use a separate `content.sqlite3`, not the operational `mcp-state.sqlite3`. The existing database coordinates attention checkpoints and hashed write receipts and deliberately contains no content. A content index holds private drafts and readable source; use explicit enablement, mode 0600, documented retention/deletion and independent backups. Keep credentials outside both databases.
+Use a separate `content.sqlite3`, not the operational `state.sqlite3`. The existing database coordinates attention checkpoints and hashed write receipts and deliberately contains no content. A content index holds private drafts and readable source; use explicit enablement, mode 0600, documented retention/deletion and independent backups. Keep credentials outside both databases.
 
 Suggested schema:
 

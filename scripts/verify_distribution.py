@@ -9,7 +9,7 @@ wheel = next(Path("dist").glob("mb-*.whl"))
 source = next(Path("dist").glob("mb-*.tar.gz"))
 with zipfile.ZipFile(wheel) as archive:
     names = set(archive.namelist())
-    assert {"mb/guidance/mcp.md", "mb/media.py", "mb/commands/media.py"} <= names
+    assert {"mb/guidance/mcp.md", "mb/media.py", "mb/commands/media.py", "mb/shapes.py"} <= names
     # Commands removed in 2.0 must not reappear from a stale build directory.
     assert not {"mb/commands/notes.py", "mb/commands/memory.py"} & names, names
     metadata = BytesParser().parsebytes(
@@ -31,6 +31,9 @@ with tarfile.open(source) as archive:
         "tests/test_cli_write_safety.py",
         "docs/content-index-plan.md",
         "docs/homebrew-release-plan.md",
+        "docs/mcp-schemas.json",
+        "scripts/export_schemas.py",
+        "tests/test_shapes.py",
         "tests/test_bounded_capabilities.py",
         "skills/mb-mcp/SKILL.md",
         "examples/codex-mcp.toml",
