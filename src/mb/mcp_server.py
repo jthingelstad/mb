@@ -78,7 +78,7 @@ class Reply(Input):
 
 
 class Edit(PostGet):
-    content: str | None = None
+    content: Annotated[str, Field(min_length=1, max_length=100000)] | None = None
     title: str | None = None
     categories: list[str] | None = None
     operation_id: OperationID
@@ -262,6 +262,10 @@ def redact(value: Any, token: str) -> Any:
     return value
 
 
+class _ClaimedWriteFailed(Exception):
+    """Raised past a durable claim, so the remote outcome is unknown."""
+
+
 def result_block(result: dict) -> types.CallToolResult:
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=json.dumps(result))],
@@ -289,7 +293,11 @@ class Adapter:
                 return identity
             if name in REMOTE_WRITES:
                 operation_id = arguments.pop("operation_id")
-                return service.write(name, operation_id, arguments)
+                try:
+                    return service.write(name, operation_id, arguments)
+                except Exception as exc:
+                    # write() reports pre-claim failures itself; this one followed a claim.
+                    raise _ClaimedWriteFailed from exc
             if name == "checkpoint_ack":
                 return service.acknowledge(**arguments)
             if name == "post_preview":
@@ -325,19 +333,20 @@ class Adapter:
                 401,
                 outcome="not_applied",
             )
-        except Exception:
+        except _ClaimedWriteFailed:
             # No tracebacks, request payloads, response bodies or tokens in protocol errors.
             result = failure(
                 "Service unavailable; inspect configuration or local state",
                 503,
-                **(
-                    {
-                        "outcome": "unknown",
-                        "operation_id": (params.arguments or {}).get("operation_id"),
-                    }
-                    if params.name in REMOTE_WRITES
-                    else {}
-                ),
+                outcome="unknown",
+                operation_id=(params.arguments or {}).get("operation_id"),
+            )
+        except Exception:
+            # Failed before any claim, so a write was never started.
+            result = failure(
+                "Service unavailable; inspect configuration or local state",
+                503,
+                **({"outcome": "not_applied"} if params.name in REMOTE_WRITES else {}),
             )
         token = self.service.client.token if self.service is not None else ""
         return result_block(redact(result, token))

@@ -120,6 +120,17 @@ def output_human(data: dict) -> None:
             detail += f" blog={payload['identity']['blog']}"
         print(detail)
 
+    if isinstance(payload, dict) and payload.get("kind") == "operation_resolution":
+        console.print(
+            f"[green]Resolved[/green] {payload.get('operation_id', '')} as "
+            f"{payload.get('outcome', '')} (was {payload.get('previous_status', '')}, "
+            f"{payload.get('receipt_scope', '')} scope)",
+            markup=True,
+        )
+        if payload.get("note"):
+            console.print(f"  Note: {payload['note']}", markup=False)
+        return
+
     if isinstance(payload, dict) and payload.get("kind") == "upload":
         console.print(f"[green]Uploaded[/green] {payload.get('url', '')}")
         if payload.get("source"):
@@ -394,6 +405,17 @@ def output_agent(data: dict) -> None:
         if payload.get("identity", {}).get("blog"):
             detail += f" blog={payload['identity']['blog']}"
         print(detail)
+
+    if isinstance(payload, dict) and payload.get("kind") == "operation_resolution":
+        line = (
+            f"resolved scope={payload.get('receipt_scope', '')} "
+            f"previous={payload.get('previous_status', '')} "
+            f"by={payload.get('resolved_by', '')} at={payload.get('resolved_at', '')}"
+        )
+        if payload.get("note"):
+            line += f" note={json.dumps(payload['note'])}"
+        print(line)
+        return
 
     if isinstance(payload, dict) and payload.get("kind") == "upload":
         line = payload.get("url", "")

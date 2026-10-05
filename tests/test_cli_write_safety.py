@@ -31,7 +31,7 @@ class Harness:
     def writes(self):
         return [r for r in self.requests if r.method == "POST" and r.url.path != "/account/verify"]
 
-    def invoke(self, args, profile="default", blog=BLOG, username="agent"):
+    def invoke(self, args, profile="default", blog=BLOG, username="agent", input=None):
         def respond(request):
             self.requests.append(request)
             if request.url.path == "/account/verify":
@@ -100,7 +100,7 @@ class Harness:
                     patch(f"mb.commands.{module}.get_service", return_value=service)
                 )
             stack.enter_context(patch("mb.commands.get_service", return_value=service))
-            result = CliRunner().invoke(app, ["--format", "json", *args])
+            result = CliRunner().invoke(app, ["--format", "json", *args], input=input)
         assert not result.exception or isinstance(result.exception, SystemExit), result.exception
         return result, json.loads(result.output)
 

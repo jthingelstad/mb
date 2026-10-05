@@ -230,6 +230,19 @@ class StateStore:
 
     def finish(self, scope: str, operation_id: str, result: dict) -> None:
         with self.connection() as db:
+            row = db.execute(
+                "SELECT status,result FROM operations WHERE scope=? AND id=?",
+                (scope, operation_id),
+            ).fetchone()
+            if row and row[0] == "resolved":
+                # A human resolution stands; keep the late dispatch result beside it for review.
+                resolved = json.loads(row[1])
+                resolved["resolution"]["late_receipt"] = result
+                db.execute(
+                    "UPDATE operations SET result=? WHERE scope=? AND id=?",
+                    (json.dumps(resolved), scope, operation_id),
+                )
+                return
             db.execute(
                 "UPDATE operations SET status=?,result=? WHERE scope=? AND id=?",
                 (
@@ -239,3 +252,51 @@ class StateStore:
                     operation_id,
                 ),
             )
+
+    def resolve(
+        self,
+        scope: str,
+        operation_id: str,
+        outcome: str,
+        *,
+        resolved_at: str,
+        resolved_by: str,
+        note: str | None = None,
+    ) -> dict | None:
+        """Record a human answer for a pending or unknown receipt, keeping what it replaced."""
+        if outcome not in {"applied", "not_applied"}:
+            raise ValueError("Resolve with applied or not_applied")
+        if self._operation_row(scope, operation_id) is None:
+            return None
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT status,result FROM operations WHERE scope=? AND id=?",
+                (scope, operation_id),
+            ).fetchone()
+            if row is None:
+                return None
+            if row[0] not in {"pending", "unknown"}:
+                raise StateConflict("Only pending or unknown receipts can be resolved")
+            previous = json.loads(row[1]) if row[1] else None
+            receipt = {
+                "ok": outcome == "applied",
+                "operation_id": operation_id,
+                "outcome": outcome,
+                "data": (previous or {}).get("data", {}),
+                "resolution": {
+                    "outcome": outcome,
+                    "resolved_at": resolved_at,
+                    "resolved_by": resolved_by,
+                    "note": note,
+                    "previous_status": row[0],
+                    "previous_receipt": previous,
+                },
+            }
+            if outcome == "not_applied":
+                receipt.update(error="write_not_applied", code=409)
+            # The resolved status no longer blocks new claims in this scope.
+            db.execute(
+                "UPDATE operations SET status='resolved',result=? WHERE scope=? AND id=?",
+                (json.dumps(receipt), scope, operation_id),
+            )
+        return receipt

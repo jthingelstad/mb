@@ -159,8 +159,9 @@ def cli_write(
     try:
         result = service.write(action, chosen_id, arguments)
     except Exception:
-        # Dispatch or receipt persistence may have succeeded; never expose exception
-        # details or resend. Retain the chosen ID even if storing the result failed.
+        # The service reports pre-claim failures as not_applied itself, so anything
+        # raised here happened after the claim: dispatch or receipt persistence may
+        # have succeeded. Never expose exception details or resend.
         result = {
             "ok": False,
             "error": "write_outcome_unknown",

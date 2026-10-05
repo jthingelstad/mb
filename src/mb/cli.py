@@ -452,6 +452,13 @@ def operation_status(
         False, "--latest", help="Inspect the newest receipt in this account/blog"
     ),
     scope: str | None = typer.Option(None, help="Receipt scope: blog or reply"),
+    resolve: str | None = typer.Option(
+        None,
+        "--resolve",
+        help="After checking the blog yourself, record applied or not_applied for a "
+        "pending/unknown receipt",
+    ),
+    note: str | None = typer.Option(None, "--note", help="Why the receipt was resolved"),
 ):
     """Read the shared CLI/MCP durable write receipt."""
     from mb.commands import get_service, output_or_exit, with_cli_recovery
@@ -465,6 +472,19 @@ def operation_status(
             },
             get_format(ctx),
         )
+        return
+    if resolve is not None or note is not None:
+        refusal = None
+        if resolve not in {"applied", "not_applied"}:
+            refusal = "Use --resolve applied or --resolve not_applied (--note needs --resolve)"
+        elif latest:
+            refusal = "Resolve an explicit operation ID, not --latest"
+        if refusal:
+            output_or_exit({"ok": False, "error": refusal, "code": 400}, get_format(ctx))
+            return
+        assert operation_id is not None and resolve is not None
+        result = get_service(ctx).resolve_operation(operation_id, resolve, scope, note)
+        output_or_exit(result, get_format(ctx))
         return
     service = get_service(ctx)
     if latest:
