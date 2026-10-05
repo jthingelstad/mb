@@ -12,13 +12,19 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.0.1
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python-version }}
           enable-cache: true
           prune-cache: true
       - run: uv sync --locked
@@ -31,12 +37,25 @@ jobs:
         run: uv run --locked --extra mcp ruff format --check .
       - name: Type check
         run: uv run --locked --extra mcp mypy src/mb --ignore-missing-imports
+      - name: Tests
+        run: uv run --locked --extra mcp pytest tests/ -q --cov=mb --cov-report=term-missing --cov-fail-under=70
+
+  package:
+    name: audit and distribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: "3.14"
+          enable-cache: true
+          prune-cache: true
+      - run: uv sync --locked --extra mcp
       - name: Audit locked dependencies
         run: |
           uv export --locked --extra mcp --no-dev --no-emit-project --format requirements-txt > /tmp/requirements.txt
           uvx --from pip-audit==2.10.1 pip-audit --requirement /tmp/requirements.txt --disable-pip
-      - name: Tests
-        run: uv run --locked --extra mcp pytest tests/ -q --cov=mb --cov-report=term-missing --cov-fail-under=70
 
       - name: Distribution contents
         run: |
