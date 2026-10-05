@@ -2,11 +2,18 @@ name: live smoke
 
 # Exercises a real micro.blog test account: guided sign-in, CLI and MCP reads validated
 # against the published schemas, and a draft/edit/publish/delete cycle on the test blog.
+# Dispatch with suite=full for scripts/live_qa.py, which covers every command.
 # Never runs on pull requests, so the token is only available to code already on main.
 on:
   schedule:
     - cron: "17 13 * * 1" # Mondays, 08:17 US Central (CDT)
   workflow_dispatch:
+    inputs:
+      suite:
+        description: "smoke (quick) or full (live_qa.py: every command, refusals, CLI and MCP write cycles)"
+        type: choice
+        options: [smoke, full]
+        default: smoke
 
 permissions:
   contents: read
@@ -19,7 +26,7 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     environment: live-smoke
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.0.1
@@ -28,7 +35,10 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --extra mcp
       - name: Live smoke
-        run: uv run --locked --extra mcp python scripts/live_smoke.py
+        run: |
+          if [ "$SUITE" = "full" ]; then script=live_qa.py; else script=live_smoke.py; fi
+          uv run --locked --extra mcp python "scripts/$script"
         env:
           MB_TEST_TOKEN: ${{ secrets.MB_TEST_TOKEN }}
           MB_TEST_BLOG: ${{ vars.MB_TEST_BLOG }}
+          SUITE: ${{ inputs.suite || 'smoke' }}
