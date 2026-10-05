@@ -15,6 +15,7 @@ from mcp.server.stdio import stdio_server
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from mb.services import AuthenticationUnavailable, MicroblogService, failure
+from mb.shapes import compact, output_schema, versioned
 
 PostID = Annotated[str, Field(pattern=r"^[0-9]{1,20}$")]
 OperationID = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")]
@@ -29,26 +30,43 @@ class Empty(Input):
     pass
 
 
-class Attention(Input):
+class Read(Input):
+    verbose: bool = Field(
+        default=False,
+        description="Also return upstream fields (HTML, author and _microblog blocks, identity); off by default",
+    )
+
+
+class Attention(Read):
     count: Count = 10
     cursor: str | None = None
 
 
-class Heartbeat(Attention):
-    count: Count = 3
+class Inbox(Attention):
+    rebaseline: bool = Field(
+        default=False,
+        description="Accept the recent window as complete when the saved mention has aged out; the acknowledgement records the gap",
+    )
 
 
-class Timeline(Input):
+class Heartbeat(Read):
+    cursor: str | None = None
+    count: Count | None = Field(
+        default=None, description="Default 3 for the first snapshot, then 20 per page"
+    )
+
+
+class Timeline(Read):
     count: Count = 20
     since: PostID | None = None
     before: PostID | None = None
 
 
-class Conversation(Input):
+class Conversation(Read):
     post_id: Annotated[str, Field(min_length=1, max_length=2048)]
 
 
-class BlogPosts(Input):
+class BlogPosts(Read):
     count: Count = 10
     drafts: bool = False
     category: str | None = None
@@ -93,21 +111,21 @@ class Publish(PostGet):
     operation_id: OperationID
 
 
-class Discover(Input):
+class Discover(Read):
     count: Count = 20
     collection: str | None = None
 
 
-class Profile(Input):
+class Profile(Read):
     username: Annotated[str, Field(pattern=r"^[A-Za-z0-9_.-]{1,64}$")]
     count: Count = 10
 
 
-class ReadCount(Input):
+class ReadCount(Read):
     count: Count = 10
 
 
-class Search(Input):
+class Search(Read):
     query: Annotated[str, Field(min_length=1, max_length=1000)]
     count: Count = 20
     category: str | None = None
@@ -205,7 +223,7 @@ CATALOG: dict[str, tuple[type[Input], str]] = {
         Search,
         "Server-filtered source search on the verified selected blog. Coverage is bounded; never assume a complete archive.",
     ),
-    "blog_categories": (Empty, "Read category names for the verified selected blog."),
+    "blog_categories": (Read, "Read category names for the verified selected blog."),
     "post_publish": (
         Publish,
         "Publish an existing unchanged draft. Review post_get, then supply its source_hash and stable operation_id; requires user authorization.",
@@ -224,11 +242,11 @@ CATALOG: dict[str, tuple[type[Input], str]] = {
     ),
     "heartbeat": (
         Heartbeat,
-        "Compact session snapshot with recent mentions. Timeline paging and explicit acknowledgement; use inbox to track mentions.",
+        "Session snapshot with recent mentions: 3 posts the first time, then 20 per page since the checkpoint. Explicit acknowledgement; use inbox to track mentions.",
     ),
     "inbox": (
-        Attention,
-        "Triage mentions with thread classification. Follow next_cursor; acknowledge only after consuming a complete recent window.",
+        Inbox,
+        "Triage mentions with thread classification. Follow next_cursor; acknowledge only after consuming a complete recent window. If anchor_missing stays true, the saved mention aged out: ask the user, then read with rebaseline.",
     ),
     "catchup": (
         Attention,
@@ -288,17 +306,6 @@ REMOTE_WRITES = {
     "media_upload",
 }
 MUTATIONS = REMOTE_WRITES | {"checkpoint_ack"}
-OUTPUT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "ok": {"type": "boolean"},
-        "data": {"type": "object"},
-        "error": {"type": "string"},
-        "code": {"type": "integer"},
-    },
-    "required": ["ok"],
-    "additionalProperties": True,
-}
 
 
 def redact(value: Any, token: str) -> Any:
@@ -325,6 +332,7 @@ class _ClaimedWriteFailed(Exception):
 
 
 def result_block(result: dict) -> types.CallToolResult:
+    result = versioned(result)
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=json.dumps(result))],
         structured_content=result,
@@ -349,22 +357,28 @@ class Adapter:
             identity = service.identity()
             if not identity["ok"] or name == "identity":
                 return identity
-            if name in REMOTE_WRITES:
-                operation_id = arguments.pop("operation_id")
-                try:
-                    return service.write(name, operation_id, arguments)
-                except Exception as exc:
-                    # write() reports pre-claim failures itself; this one followed a claim.
-                    raise _ClaimedWriteFailed from exc
-            if name == "checkpoint_ack":
-                return service.acknowledge(**arguments)
-            if name == "post_preview":
-                return service.preview(**arguments)
-            if name == "blog_posts":
-                return service.own_posts(**arguments)
-            if name in {"inbox", "catchup"}:
-                return service.attention(name, **arguments)
-            return getattr(service, name)(**arguments)
+            verbose = arguments.pop("verbose", False)
+            result = self._dispatch(service, name, arguments)
+            return result if verbose else compact(name, result)
+
+    @staticmethod
+    def _dispatch(service: MicroblogService, name: str, arguments: dict) -> dict:
+        if name in REMOTE_WRITES:
+            operation_id = arguments.pop("operation_id")
+            try:
+                return service.write(name, operation_id, arguments)
+            except Exception as exc:
+                # write() reports pre-claim failures itself; this one followed a claim.
+                raise _ClaimedWriteFailed from exc
+        if name == "checkpoint_ack":
+            return service.acknowledge(**arguments)
+        if name == "post_preview":
+            return service.preview(**arguments)
+        if name == "blog_posts":
+            return service.own_posts(**arguments)
+        if name in {"inbox", "catchup"}:
+            return service.attention(name, **arguments)
+        return getattr(service, name)(**arguments)
 
     async def call_tool(
         self, _ctx: Any, params: types.CallToolRequestParams
@@ -413,7 +427,7 @@ class Adapter:
                     name=name,
                     description=description,
                     input_schema=model.model_json_schema(),
-                    output_schema=OUTPUT_SCHEMA,
+                    output_schema=output_schema(name),
                     annotations=types.ToolAnnotations(
                         read_only_hint=name not in MUTATIONS,
                         destructive_hint=name in {"post_edit", "post_delete"},

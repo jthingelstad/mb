@@ -27,6 +27,14 @@ def validate_name(kind: str, name: str) -> str:
     return name
 
 
+def default_state_path() -> Path:
+    """The shared receipt and checkpoint store. MB 2.0 named it mcp-state.sqlite3;
+    keep using that file when it is the only one, so no receipts are left behind."""
+    current = CONFIG_DIR / "state.sqlite3"
+    legacy = CONFIG_DIR / "mcp-state.sqlite3"
+    return legacy if legacy.exists() and not current.exists() else current
+
+
 def _load_config_file() -> dict:
     if not CONFIG_FILE.exists():
         return {}

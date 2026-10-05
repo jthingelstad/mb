@@ -6,7 +6,7 @@
 
 | 1.x | 2.x |
 | --- | --- |
-| Post writes were stateless | Every post, reply, edit, delete, publish and upload is recorded in a local state file (`~/.config/mb/mcp-state.sqlite3`) before it is sent. `--operation-id` is optional in the CLI; one is generated when omitted |
+| Post writes were stateless | Every post, reply, edit, delete, publish and upload is recorded in a local state file (`~/.config/mb/mcp-state.sqlite3`, called `state.sqlite3` from 2.1) before it is sent. `--operation-id` is optional in the CLI; one is generated when omitted |
 | `mb post new "Caption" --photo image.jpg` uploaded and posted in one step | Refused. Upload first with `mb media upload image.jpg --alt TEXT`, then post with `--photo-url` and `--alt` |
 | `mb upload` accepted a remote URL | Remote URLs are refused; nothing is fetched. `mb upload PATH --alt TEXT` is an alias for `mb media upload` and uploads the local file unchanged |
 | Edit/delete could match a post by slug suffix | Use an exact post URL or native numeric ID owned by the selected blog |

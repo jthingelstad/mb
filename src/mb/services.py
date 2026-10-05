@@ -370,7 +370,13 @@ class MicroblogService:
             },
         }
 
-    def attention(self, workflow: str, count: int = 10, cursor: str | None = None) -> dict:
+    def attention(
+        self,
+        workflow: str,
+        count: int = 10,
+        cursor: str | None = None,
+        rebaseline: bool = False,
+    ) -> dict:
         identity = self.identity()
         if not identity["ok"]:
             return identity
@@ -408,6 +414,9 @@ class MicroblogService:
             raw = result["data"]["items"]
             fence = next((index for index, i in enumerate(raw) if i["id"] == anchor), None)
             items = raw[:fence] if fence is not None else raw
+            # A saved mention can age out of Micro.blog's recent window. Without an
+            # explicit rebaseline the window never completes, so nothing is skipped silently.
+            anchor_missing = workflow == "inbox" and record["scheme"] is not None and fence is None
             complete = (
                 (record["scheme"] is None or fence is not None)
                 if workflow == "inbox"
@@ -425,7 +434,11 @@ class MicroblogService:
                 "complete": complete,
                 "before": raw[-1]["id"] if raw else None,
                 "seen": frozenset(i["id"] for i in raw),
+                "anchor_missing": anchor_missing,
+                "rebaselined": anchor_missing and rebaseline and not review_required,
             }
+            if window["rebaselined"]:
+                window["complete"] = True
         selected = window["items"][:count]
         remaining = window["items"][count:]
         if workflow != "inbox" and not remaining and not window["complete"]:
@@ -461,6 +474,8 @@ class MicroblogService:
                 "scope": scope,
                 "value": window["latest"],
                 "revision": revision,
+                "rebaselined": window.get("rebaselined", False),
+                "previous_checkpoint": checkpoint,
             }
         # Bound in-memory attention metadata; evicted handles produce a useful conflict.
         while len(self._windows) > 128:
@@ -479,6 +494,14 @@ class MicroblogService:
                 )
         else:
             entries = [normalize_post(i) for i in selected]
+        extra = (
+            {
+                "anchor_missing": window.get("anchor_missing", False),
+                "rebaselined": window.get("rebaselined", False),
+            }
+            if workflow == "inbox"
+            else {}
+        )
         return {
             "ok": True,
             "data": {
@@ -507,10 +530,18 @@ class MicroblogService:
                 "next_cursor": next_cursor,
                 "ack_receipt": receipt,
                 "advanced": False,
+                **extra,
             },
         }
 
-    def heartbeat(self, count: int = 3, cursor: str | None = None) -> dict:
+    def heartbeat(self, count: int | None = None, cursor: str | None = None) -> dict:
+        if count is None:
+            # The first snapshot stays small; later sessions page through more at once.
+            identity = self.identity()
+            if not identity["ok"]:
+                return identity
+            saved = self.state.cursor_record(self._scope("heartbeat"))["scheme"] is not None
+            count = 20 if saved else 3
         result = self.attention("heartbeat", count, cursor)
         if not result["ok"]:
             return result
@@ -530,16 +561,19 @@ class MicroblogService:
         if not record:
             return failure("Unknown acknowledgement receipt; read a complete window first", 409)
         try:
-            return {
-                "ok": True,
-                "data": self.state.acknowledge(
-                    record["scope"], record["value"], record["revision"]
-                ),
-            }
+            data = self.state.acknowledge(record["scope"], record["value"], record["revision"])
         except CheckpointReviewRequired as exc:
             return failure(str(exc), 409, reason="checkpoint_review_required")
         except StateConflict as exc:
             return failure(str(exc), 409)
+        if record.get("rebaselined"):
+            # Mentions between the old checkpoint and this window were not readable.
+            data = {
+                **data,
+                "rebaselined": True,
+                "previous_checkpoint": record["previous_checkpoint"],
+            }
+        return {"ok": True, "data": data}
 
     def conversation(self, post_id: str) -> dict:
         return read_conversation(self.client, post_id)
@@ -621,6 +655,7 @@ class MicroblogService:
             "ok": True,
             "data": {
                 "items": [normalize_post(i) for i in items[:count]],
+                "returned_count": len(items[:count]),
                 "truncated": len(items) > count,
                 "coverage": "recent-source-window",
                 "coverage_complete": False,

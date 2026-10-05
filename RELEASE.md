@@ -1,3 +1,15 @@
+## mb v2.1.0 (unreleased)
+
+- **Versioned results.** Every CLI `--format json` envelope and MCP result starts with `"schema_version": 1`. Adding a field keeps the version; removing, renaming or retyping one bumps it.
+- **Per-tool output schemas.** Each of the 23 MCP tools publishes the schema of its own result instead of one generic envelope, and [docs/mcp-schemas.json](docs/mcp-schemas.json) collects them. Tests validate real stdio results against them.
+- **Compact MCP reads.** Read tools return `content_text`, a flat author, and `links` and `images` lists, without the HTML, the upstream `author` and `_microblog` blocks, feed metadata or the repeated identity. Own-blog lists return a 500-character excerpt. Live, a typical session's results are about a third of their 2.0 size. Pass `verbose: true` for the full shape. `profile_get` adds a flat `profile`, and `blog_posts` now reports `returned_count`. CLI JSON is unchanged apart from `schema_version`.
+- **Inbox rebaseline.** When the saved mention has aged out of Micro.blog's recent mentions window, `inbox` reports `anchor_missing: true` and still offers no acknowledgement. After the person agrees, `inbox` with `rebaseline: true` lets the recent window be acknowledged, and `checkpoint_ack` reports `rebaselined` with the `previous_checkpoint`.
+- **Heartbeat pages.** The first heartbeat stays a 3-post snapshot; later heartbeats page 20 posts at a time since the checkpoint. `count` still overrides.
+- **State file name.** The shared receipt and checkpoint store is now `~/.config/mb/state.sqlite3`. An existing 2.0 `mcp-state.sqlite3` keeps being used while it is the only one, so no receipts or checkpoints are lost; nothing is moved or renamed automatically.
+- **Install name.** The Homebrew tap is now `jthingelstad/tap`: `brew install jthingelstad/tap/mb`.
+
+---
+
 ## mb v2.0.1
 
 The first release meant for public use, installable with `brew install jthingelstad/tap/mb`.

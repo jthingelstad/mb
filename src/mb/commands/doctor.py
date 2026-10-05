@@ -247,7 +247,7 @@ def _check_state(report: _Report, ctx: typer.Context, profile: str) -> None:
     from mb.state import LEGACY_CURSOR, StateStore
 
     configured = (ctx.obj or {}).get("state_file")
-    path = Path(configured) if configured else config.CONFIG_DIR / "mcp-state.sqlite3"
+    path = Path(configured) if configured else config.default_state_path()
     if not path.exists():
         report.add("state", OK, f"No receipts yet at {path}", path=str(path))
         return

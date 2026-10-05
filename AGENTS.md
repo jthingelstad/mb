@@ -35,6 +35,7 @@ src/mb/config.py                Config loading/saving and profile support
 src/mb/formatters.py            json | human | agent output modes
 src/mb/domain.py                Post normalization, thread ordering, mention classification
 src/mb/services.py              Shared CLI/MCP services: identity, attention, writes, receipts
+src/mb/shapes.py                schema_version, compact MCP results and per-tool output schemas
 src/mb/state.py                 SQLite state file: checkpoints and write receipts
 src/mb/media.py                 Local image validation for upload
 src/mb/mcp_server.py            Optional stdio MCP server (mcp extra only)
@@ -314,20 +315,22 @@ Default output is agent mode:
 Use `--format json` for structured output:
 
 ```json
-{ "ok": true, "data": { ... } }
+{ "schema_version": 1, "ok": true, "data": { ... } }
 ```
 
 Errors:
 
 ```json
-{ "ok": false, "error": "message", "code": 400 }
+{ "schema_version": 1, "ok": false, "error": "message", "code": 400 }
 ```
 
 Rate limits:
 
 ```json
-{ "ok": false, "error": "rate_limited", "retry_after": 60 }
+{ "schema_version": 1, "ok": false, "error": "rate_limited", "retry_after": 60 }
 ```
+
+`schema_version` (in `src/mb/shapes.py`) covers CLI JSON and MCP results. Adding a field keeps it; removing, renaming or retyping a field bumps it. MCP reads are compact by default (`verbose: true` returns the full shape); CLI JSON is always full. When a tool's result shape changes, update `DATA_SCHEMAS` and run `uv run python scripts/export_schemas.py` to refresh `docs/mcp-schemas.json`.
 
 `--format agent` prints condensed plain text for list-like reads and threaded conversations. `content_text` is added to JSON list results when `content_html` is present.
 

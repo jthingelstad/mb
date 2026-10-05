@@ -38,7 +38,11 @@ def test_version_prints_name_and_version(flag):
 def test_version_json_envelope(args):
     result = invoke(args)
     assert result.exit_code == 0
-    assert json.loads(result.stdout) == {"ok": True, "data": {"version": package_version()}}
+    assert json.loads(result.stdout) == {
+        "schema_version": 1,
+        "ok": True,
+        "data": {"version": package_version()},
+    }
 
 
 def test_version_flag_after_a_command_is_not_intercepted():
@@ -223,7 +227,12 @@ def test_auth_reads_token_from_stdin_and_never_prints_it():
 def test_auth_refuses_empty_stdin(stdin):
     result = invoke(["-f", "json", "auth", "-"], input=stdin)
     assert result.exit_code == 1
-    assert json.loads(result.stdout) == {"ok": False, "error": "No token on stdin", "code": 400}
+    assert json.loads(result.stdout) == {
+        "schema_version": 1,
+        "ok": False,
+        "error": "No token on stdin",
+        "code": 400,
+    }
     assert not config.CONFIG_FILE.exists()
 
 
