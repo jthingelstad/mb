@@ -130,6 +130,31 @@ def output_human(data: dict) -> None:
             detail += f" blog={payload['identity']['blog']}"
         print(detail)
 
+    if isinstance(payload, dict) and payload.get("kind") == "doctor":
+        styles = {"ok": "green", "warn": "yellow", "error": "red"}
+        for check in payload.get("checks", []):
+            status = check.get("status", "")
+            style = styles.get(status, "white")
+            console.print(
+                f"[{style}]{status.upper():5}[/{style}] "
+                f"[bold]{escape(check.get('name', ''))}[/bold] {escape(check.get('detail', ''))}",
+                markup=True,
+            )
+            if check.get("hint"):
+                console.print(f"      {check['hint']}", markup=False, style="dim")
+            for command in check.get("commands", []):
+                console.print(f"      {command}", markup=False, soft_wrap=True)
+        counts = payload.get("summary", {})
+        verdict = (
+            "[green]Healthy[/green]" if payload.get("healthy") else "[red]Problems found[/red]"
+        )
+        console.print(
+            f"{verdict}: {counts.get('ok', 0)} ok, {counts.get('warn', 0)} warnings, "
+            f"{counts.get('error', 0)} errors",
+            markup=True,
+        )
+        return
+
     if isinstance(payload, dict) and payload.get("kind") == "operation_resolution":
         console.print(
             f"[green]Resolved[/green] {payload.get('operation_id', '')} as "
@@ -419,6 +444,20 @@ def output_agent(data: dict) -> None:
             detail += f" blog={payload['identity']['blog']}"
         # Metadata goes to stderr so stdout stays one line per post for pipes.
         print(detail, file=sys.stderr)
+
+    if isinstance(payload, dict) and payload.get("kind") == "doctor":
+        for check in payload.get("checks", []):
+            print(f"{check.get('status', '')} {check.get('name', '')}: {check.get('detail', '')}")
+            if check.get("hint"):
+                print(f"  hint: {check['hint']}")
+            for command in check.get("commands", []):
+                print(f"  run: {command}")
+        counts = payload.get("summary", {})
+        print(
+            f"healthy={str(payload.get('healthy', False)).lower()} "
+            f"ok={counts.get('ok', 0)} warn={counts.get('warn', 0)} error={counts.get('error', 0)}"
+        )
+        return
 
     if isinstance(payload, dict) and payload.get("kind") == "operation_resolution":
         line = (

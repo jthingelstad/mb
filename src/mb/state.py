@@ -105,6 +105,33 @@ class StateStore:
         with closing(sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True)) as db:
             return self._cursor_record(db, scope)
 
+    def summary(self) -> dict:
+        """Read-only overview for diagnostics: unresolved receipts and checkpoint schemes.
+
+        Never creates, migrates or locks the file; a missing file reads as empty.
+        """
+        if not self.path.exists():
+            return {"operations": [], "cursors": []}
+        with closing(sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True)) as db:
+            tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            operations = (
+                [
+                    {"scope": scope, "id": identifier, "status": status}
+                    for scope, identifier, status in db.execute(
+                        "SELECT scope,id,status FROM operations "
+                        "WHERE status IN ('pending','unknown') ORDER BY rowid"
+                    )
+                ]
+                if "operations" in tables
+                else []
+            )
+            scopes: set[str] = set()
+            for table in ("cursors", "cursor_provenance"):
+                if table in tables:
+                    scopes.update(r[0] for r in db.execute(f"SELECT scope FROM {table}"))
+            cursors = [{"scope": s, **self._cursor_record(db, s)} for s in sorted(scopes)]
+        return {"operations": operations, "cursors": cursors}
+
     def acknowledge(self, scope: str, value: str, expected_revision: int) -> dict:
         """Save a native-order checkpoint from a complete window, with its provenance."""
         if not re.fullmatch(r"[0-9]{1,20}", value) or int(value) <= 0 or value != str(int(value)):

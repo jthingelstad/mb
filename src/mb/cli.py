@@ -544,6 +544,19 @@ def mcp_command(
     anyio.run(serve, service_factory)
 
 
+@app.command("doctor")
+def doctor_command(
+    ctx: typer.Context,
+    offline: bool = typer.Option(
+        False, "--offline", help="Skip the token, blog and destination checks against micro.blog"
+    ),
+):
+    """Check the install, config, token, receipts and checkpoints without changing anything."""
+    from mb.commands import doctor
+
+    doctor.run(ctx, offline)
+
+
 @app.command("operation-status")
 def operation_status(
     ctx: typer.Context,
