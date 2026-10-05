@@ -185,6 +185,29 @@ def test_draft_publish_preserves_payload_and_retry_after_status_changed(tmp_path
 
 
 @pytest.mark.parametrize(
+    "location,expected",
+    [
+        (BLOG + "2026/10/05/published.html", BLOG + "2026/10/05/published.html"),
+        ("https://elsewhere.example/2026/10/05/published.html", URL),
+        (None, URL),
+    ],
+)
+def test_publish_reports_the_url_the_post_moved_to(tmp_path, location, expected):
+    source = {"properties": {"content": ["Reviewed"], "post-status": ["draft"]}}
+
+    def response(request):
+        if request.method == "GET":
+            return httpx.Response(200, json=source)
+        return httpx.Response(201 if location else 204, headers={"Location": location or ""})
+
+    service = transport_service(tmp_path, response)
+    args = dict(identifier=URL, source_hash=source_hash(source))
+    data = service.write("post_publish", "publish-moved", args)["data"]
+    assert data["url"] == expected
+    assert data.get("draft_url") == (URL if expected != URL else None)
+
+
+@pytest.mark.parametrize(
     "status,hash_value,code",
     [(["published"], "correct", 409), (["draft"], "0" * 64, 409), (["draft"], "invalid", 400)],
 )

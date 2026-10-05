@@ -157,9 +157,24 @@ async def mcp_reads() -> None:
             )
 
 
+MARKER = "mb live smoke"
+
+
+async def smoke_posts(session: ClientSession) -> list[str]:
+    """URLs of posts this test left on the blog, published or draft, found by their marker."""
+    urls = []
+    for drafts in (False, True):
+        result = await session.call_tool("blog_posts", {"count": 50, "drafts": drafts})
+        for item in ((result.structured_content or {}).get("data") or {}).get("items") or []:
+            if (item.get("content_text") or "").startswith(MARKER) and item.get("url"):
+                urls.append(item["url"])
+    return list(dict.fromkeys(urls))
+
+
 async def mcp_write_cycle() -> None:
     """Draft, edit, publish and delete one post on the test blog; always clean up."""
     stamp = datetime.now(UTC).isoformat(timespec="seconds")
+    note = "This test post is deleted within a minute."
     async with stdio_client(server()) as (read, write):
         async with ClientSession(read, write, read_timeout_seconds=60) as session:
             await session.initialize()
@@ -170,16 +185,16 @@ async def mcp_write_cycle() -> None:
                 schemas,
                 "post_create",
                 {
-                    "content": f"mb live smoke {RUN} draft ({stamp}). This test post is deleted "
-                    "within a minute.",
+                    "content": f"{MARKER} {RUN} draft ({stamp}). {note}",
                     "draft": True,
                     "operation_id": f"smoke-{RUN}-create",
                 },
             )
             url = (created.get("data") or {}).get("url")
-            step("draft has a url", bool(url))
+            step("draft has a url", bool(url), str(url))
             if not url:
                 return
+            live = url
             try:
                 draft = await call(session, schemas, "post_get", {"identifier": url})
                 status = (draft.get("data") or {}).get("properties", {}).get("post-status")
@@ -190,8 +205,7 @@ async def mcp_write_cycle() -> None:
                     "post_edit",
                     {
                         "identifier": url,
-                        "content": f"mb live smoke {RUN} edited ({stamp}). This test post is "
-                        "deleted within a minute.",
+                        "content": f"{MARKER} {RUN} edited ({stamp}). {note}",
                         "operation_id": f"smoke-{RUN}-edit",
                     },
                 )
@@ -199,7 +213,7 @@ async def mcp_write_cycle() -> None:
                 data = edited.get("data") or {}
                 content = " ".join(data.get("properties", {}).get("content") or [])
                 step("edit is visible", "edited" in content)
-                await call(
+                publish = await call(
                     session,
                     schemas,
                     "post_publish",
@@ -209,20 +223,38 @@ async def mcp_write_cycle() -> None:
                         "operation_id": f"smoke-{RUN}-publish",
                     },
                 )
-                published = await call(session, schemas, "post_get", {"identifier": url})
-                status = (published.get("data") or {}).get("properties", {}).get("post-status")
-                step("published post is live", status == ["published"], str(status))
+                live = (publish.get("data") or {}).get("url") or url
+                print(f"     publish reported url={live} draft_url={url}", flush=True)
+                published = await session.call_tool("post_get", {"identifier": live})
+                content = published.structured_content or {}
+                status = (content.get("data") or {}).get("properties", {}).get("post-status")
+                step("publish reports where the post lives", status == ["published"], str(status))
+                if status != ["published"]:
+                    found = [u for u in await smoke_posts(session) if u != url]
+                    print(f"     marker search found {found}", flush=True)
+                    live = found[0] if found else live
             finally:
                 await call(
                     session,
                     schemas,
                     "post_delete",
-                    {"identifier": url, "operation_id": f"smoke-{RUN}-delete"},
+                    {"identifier": live, "operation_id": f"smoke-{RUN}-delete"},
                 )
-                gone = await session.call_tool("post_get", {"identifier": url})
+                gone = await session.call_tool("post_get", {"identifier": live})
                 step("deleted post is gone", (gone.structured_content or {}).get("ok") is False)
+                # Sweep anything an earlier failed run left behind.
+                for index, leftover in enumerate(await smoke_posts(session)):
+                    print(f"     deleting leftover {leftover}", flush=True)
+                    await call(
+                        session,
+                        schemas,
+                        "post_delete",
+                        {"identifier": leftover, "operation_id": f"smoke-{RUN}-sweep-{index}"},
+                    )
+                left = await smoke_posts(session)
+                step("no smoke posts left on the blog", not left, str(left))
             await call(
-                session, schemas, "operation_status", {"operation_id": f"smoke-{RUN}-delete"}
+                session, schemas, "operation_status", {"operation_id": f"smoke-{RUN}-create"}
             )
 
 
