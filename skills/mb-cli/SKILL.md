@@ -109,6 +109,7 @@ Identity and config:
 mb whoami
 mb profiles
 mb blogs
+mb doctor --offline
 ```
 
 Posting:
@@ -120,10 +121,11 @@ mb post new --content "Text" --operation-id example-3
 mb post new --file post.md --operation-id example-4
 mb post short --strict-300 "Short text" --operation-id example-5
 mb post new --dry-run "Text"
-mb --media-root ./reviewed media preview image.jpg --alt "Description"
-mb post new "Text" --photo-url https://cdn.micro.blog/... --operation-id example-6
-mb post edit <id> --content "Updated" --operation-id example-7
-mb post reply <id> "Reply text" --operation-id example-8
+mb media upload image.jpg --alt "Description" --operation-id example-6
+mb post new "Text" --photo-url https://cdn.micro.blog/... --alt "Description" --operation-id example-7
+mb post edit <id-or-url> --content "Updated" --operation-id example-8
+mb post reply <id-or-url> "Reply text" --operation-id example-9
+mb post publish <url> --source-hash HASH --operation-id example-10
 ```
 
 Reading:
@@ -151,10 +153,18 @@ mb follow <username|->
 mb unfollow <username|->
 ```
 
-## Candidate 2.0 write requirements
+## Write requirements
 
-Persist the intended action's operation ID and exact arguments before invoking a write. Reuse both on retries; never generate a fresh ID after an uncertain outcome. Agents should use `--operation-id` for exact retries. Ordinary human CLI use may omit it; MB saves a generated ID before dispatch, and every plain invocation starts a new operation. Inspect the printed recovery command or `mb operation-status --latest` after uncertainty; never rerun a plain command as a retry. Use one persistent shared state file. Combined `--photo`, implicit absolute-path upload and remote URL fetch are removed; follow the explicit media workflow. Edit/delete require an exact owned URL or numeric ID. See [migration guide](../../docs/migration-2.0.md).
+- Persist the intended action's `--operation-id` and exact arguments before invoking a write. Reuse both on retries; never generate a fresh ID after an uncertain outcome. Ordinary human CLI use may omit the ID (one is generated and saved per invocation), so a plain rerun is a new write.
+- Use one persistent state file (`--state-file`) shared with any MCP client on the same account.
+- After `outcome=unknown`, run the printed `mb operation-status ...` command (or `mb operation-status --latest`) and read back from micro.blog. Do not resend. Recording the verified outcome with `mb operation-status ID --resolve applied|not_applied` is the human's decision; propose it, don't run it on your own judgment.
+- `mb doctor` lists pending and unknown receipts with resolve hints.
+- Edit, delete and publish need an exact owned URL or numeric ID. To publish a draft: `mb post get URL --format json`, review the source, then `mb post publish URL --source-hash HASH --operation-id ID`.
 
-Use `mb media preview FILE --alt TEXT` under an explicitly selected `--media-root DIR` to review a supported static local image, its normalized payload/hash and verified destination. After authorization, `mb media upload FILE --alt TEXT --sha256 HASH --operation-id ID` returns the image reference; HTTP 202 means accepted but possibly still processing. Attach that URL with `mb post new ... --photo-url URL --alt TEXT --operation-id DIFFERENT_ID`. Preserve IDs/arguments across retries and inspect `mb operation-status ID` after uncertainty. Never repeat an upload merely because creating a post failed.
+## Images
 
-Post create/reply/edit/delete use shared CLI/MCP receipts with `--state-file`; caller-stable `--operation-id` is optional in the CLI and required in MCP. Agents should supply it. Existing-draft publish requires `mb post get URL --format json`, review of its source, then `mb post publish URL --source-hash HASH --operation-id ID`; no automatic live verification writes. `mb post replies`, `mb user show --count N`, `mb discover --count N` and `mb conversation URL` are account reads. `mb blog posts/search/categories` are selected-blog source reads with bounded coverage, not a complete category audit. `mb user mute WORD --keyword` explicitly mutes a keyword.
+`mb media upload FILE --alt TEXT` uploads a local JPEG, PNG, GIF or WebP (up to 20 MiB) exactly as provided. It does not strip EXIF or GPS metadata; check with the user before uploading a photo that may carry location data. `mb media preview FILE --alt TEXT` shows type, size and sha256 without uploading; pass that `--sha256` to upload to refuse a changed file. HTTP 202 means accepted but possibly still processing. Attach the returned URL with `mb post new ... --photo-url URL --alt TEXT` under a different operation ID. Never repeat an upload merely because creating the post failed. Combined `--photo` and remote-URL uploads are removed.
+
+## Other reads
+
+`mb post replies`, `mb user show NAME --count N`, `mb discover --count N` and `mb conversation URL` are account reads. `mb blog posts/search/categories` are selected-blog reads over a bounded window, not a complete category audit. `mb user mute WORD --keyword` mutes a keyword. Metadata such as `coverage=` and `mb lookup users` errors go to stderr; stdout carries only records.

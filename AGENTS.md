@@ -20,27 +20,41 @@ Core priorities:
 Project-local skills live under `skills/`:
 
 - `skills/mb-cli/SKILL.md`: core `mb` command usage and workflow guidance
+- `skills/mb-mcp/SKILL.md`: operating the `mb mcp` stdio tools (identity, attention, acknowledgement, one authorized write)
 - `skills/mb-for-user-delegation/SKILL.md`: guidance for acting on behalf of a human user
 - `skills/mb-agent-blogger/SKILL.md`: guidance for an agent managing its own blog identity
 
-When working on skill-related requests, keep the command workflow in `mb-cli` separate from the social/voice rules in the two behavior skills.
+When working on skill-related requests, keep the operational skills (`mb-cli`, `mb-mcp`) separate from the social/voice rules in the two behavior skills.
 
 ## Repository Layout
 
 ```text
-src/mb/cli.py                 Typer entrypoint and global options
-src/mb/api.py                 HTTP client for micro.blog APIs
-src/mb/config.py              Config loading/saving and profile support
-src/mb/formatters.py          json | human | agent output modes
-src/mb/commands/catchup.py    New timeline posts since catchup checkpoint
-src/mb/commands/inbox.py      Attention-oriented mention triage
-src/mb/commands/post.py       Post create/get/edit/reply/delete/list
-src/mb/commands/timeline.py   Timeline, discover, check, checkpoint
+src/mb/cli.py                   Typer entrypoint, global options, mcp and operation-status
+src/mb/api.py                   HTTP client for micro.blog APIs
+src/mb/config.py                Config loading/saving and profile support
+src/mb/formatters.py            json | human | agent output modes
+src/mb/domain.py                Post normalization, thread ordering, mention classification
+src/mb/services.py              Shared CLI/MCP services: identity, attention, writes, receipts
+src/mb/state.py                 SQLite state file: checkpoints and write receipts
+src/mb/media.py                 Local image validation for upload
+src/mb/mcp_server.py            Optional stdio MCP server (mcp extra only)
+src/mb/guidance/                Packaged guidance served as mb://guide
+src/mb/commands/catchup.py      New timeline posts since catchup checkpoint
+src/mb/commands/checkpoint.py   Checkpoint list/get/set/clear
+src/mb/commands/doctor.py       Read-only health check
+src/mb/commands/guide.py        `mb guide` workflow text
+src/mb/commands/heartbeat.py    Session-start snapshot
+src/mb/commands/inbox.py        Attention-oriented mention triage
+src/mb/commands/lookup.py       Pipeline enrichment for users and posts
+src/mb/commands/media.py        Image preview and upload
+src/mb/commands/post.py         Post new/short/get/edit/reply/delete/list/publish/replies
+src/mb/commands/timeline.py     Timeline, discover, check, checkpoint
 src/mb/commands/conversation.py Conversation thread formatting
-src/mb/commands/user.py       User and social graph commands
-src/mb/commands/blog.py       Read own posts, categories, search
-src/mb/commands/upload.py     Reviewed media upload alias
-tests/                        Unit and CLI integration tests
+src/mb/commands/user.py         User and social graph commands
+src/mb/commands/blog.py         Read own posts, categories, search
+src/mb/commands/upload.py       `mb upload` alias for media upload
+tests/                          Unit and CLI integration tests
+scripts/                        Distribution checks run in CI
 ```
 
 ## API Split
@@ -86,7 +100,7 @@ Legacy flat config is still supported for the default profile and auto-migrates 
 
 ## CLI Surface
 
-2.0 CLI post/upload writes generate and persist an operation ID when omitted, using shared services and selected-blog guards. Each plain invocation starts a new operation. Agents should supply caller-stable `--operation-id` and preserve exact arguments across retries; MCP still requires an ID. After uncertainty, inspect the printed recovery command or `mb operation-status --latest`; never rerun a plain write as a recovery attempt. Combined `--photo` and implicit/remote uploads are removed. See [migration/adoption](docs/migration-2.0.md).
+CLI post/upload writes go through the shared services and selected-blog guards and generate and persist an operation ID when omitted. Each plain invocation starts a new operation. Agents should supply a caller-stable `--operation-id` and preserve exact arguments across retries; MCP requires an ID. After uncertainty, inspect the printed recovery command or `mb operation-status --latest`; never rerun a plain write as a recovery attempt. A human reconciles a pending/unknown receipt with `mb operation-status ID --resolve applied|not_applied` (CLI only, never exposed over MCP). Combined `--photo` and remote-URL uploads are removed. See [docs/mcp.md](docs/mcp.md) and the README's write-safety section.
 
 Global flags can appear before or after the command:
 
@@ -95,21 +109,31 @@ Global flags can appear before or after the command:
 --blog, -b
 --format, -f
 --human
+--state-file
+--media-root      (absolute path; needed by MCP image tools)
+--version, -V
 ```
 
 Top-level commands:
 
 ```text
-mb auth <token>
+mb auth -                          Read the token from stdin (mb auth <token> also works)
 mb whoami
 mb profiles
 mb blogs
+mb doctor [--offline]
 mb guide
+mb mcp [--consumer NAME] [--read-only]
+mb operation-status ID [--scope blog|reply]
+mb operation-status --latest
+mb operation-status ID --resolve applied|not_applied [--note TEXT]
 mb heartbeat
 mb inbox
 mb catchup
 mb checkpoint list
-mb media preview FILE --alt TEXT   Review under explicit --media-root DIR
+mb media preview FILE --alt TEXT
+mb media upload FILE --alt TEXT [--sha256 HASH] [--operation-id ID]
+mb upload FILE --alt TEXT          Alias for media upload
 mb following
 mb follow <username|->
 mb unfollow <username|->
@@ -130,8 +154,7 @@ mb post new --content "Hello"
 mb post new --file post.md
 mb post new "Draft text" --draft
 mb post short --strict-300 "Hello"
-mb --media-root ./reviewed media preview image.jpg --alt "desc"  # Upload separately after review
-mb post new "Caption" --photo-url https://...
+mb post new "Caption" --photo-url https://... --alt "desc"   # Upload with media upload first
 mb post new "Tagged text" --category tag
 mb post new --dry-run "Hello"
 mb post get <id-or-url>
@@ -142,6 +165,8 @@ mb post reply <id-or-url> "Reply text"
 mb post delete <id-or-url>
 mb post list
 mb post list --drafts
+mb post publish <id-or-url> --source-hash HASH
+mb post replies
 ```
 
 Rules:
@@ -257,7 +282,7 @@ mb catchup --advance
 - `mb inbox` uses its own `inbox_checkpoint`
 - `mb checkpoint ...` is the first-class cursor management surface for `timeline`, `heartbeat`, `inbox`, and `catchup`
 - selective inbox filters are for inspection, not cursor advancement; do not combine `mb inbox --advance` with `--reason`, `--fresh-hours`, or `--max-age-days`
-- `mb upload` aliases reviewed `media upload`: relative image under explicit `--media-root`, alt and preview hash; optional caller-stable retry ID; no remote fetching
+- `mb upload` aliases `media upload`: a local file uploaded unchanged (no metadata stripping), alt text required, optional `--sha256` guard and retry ID; no remote fetching
 
 Blog commands:
 
@@ -337,8 +362,8 @@ Testing guidance:
 - Favor API tests for transport and response normalization
 
 
-## MCP candidate
+## MCP
 
-`mb mcp` is a local stdio adapter over shared domain/services, not a shell wrapper. The optional `mcp` extra must not enter the base CLI import path. See `docs/mcp.md` for typed contracts and client examples. Keep operational guidance (`mb-cli`, `mb-mcp`) separate from the two behavior skills. `src/mb/guidance/mcp.md` ships in the wheel and is exposed as `mb://guide`.
+`mb mcp` is a local stdio adapter over shared domain/services, not a shell wrapper. The optional `mcp` extra must not enter the base CLI import path (CI checks this). See `docs/mcp.md` for typed contracts and `examples/` for client configuration. Keep operational guidance (`mb-cli`, `mb-mcp`) separate from the two behavior skills. `src/mb/guidance/mcp.md` ships in the wheel and is exposed as `mb://guide`; `mb guide` text lives in `src/mb/commands/guide.py`. Update both when commands change.
 
-Pure MCP reads never advance. Consumer checkpoints are separate from CLI config cursors; only a complete receipt may be acknowledged. Operation IDs and receipts are shared per verified account/blog in one state file. Unknown writes are never auto-resent. Do not test with live writes, register persistent clients, change installed auth/cron, or replace 1.x as part of candidate verification.
+Pure MCP reads never advance. Consumer checkpoints are separate from CLI config cursors; only a complete receipt may be acknowledged. Operation IDs and receipts are shared per verified account/blog in one state file. Unknown writes are never auto-resent, and receipt resolution stays a human CLI action. Do not test with live writes, register persistent clients, or touch a real config/state file as part of verification.
