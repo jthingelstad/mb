@@ -144,9 +144,7 @@ def get_client(ctx: typer.Context | None = None) -> MicroblogClient:
     token = config.get_token(profile=profile)
     if not token:
         fmt = get_format(ctx) if ctx else "agent"
-        output(
-            {"ok": False, "error": "No token configured. Run: mb auth <token>", "code": 401}, fmt
-        )
+        output({"ok": False, "error": "No token configured. Run: mb auth", "code": 401}, fmt)
         raise SystemExit(1)
     blog_dest = None
     if ctx and ctx.obj:
@@ -212,36 +210,139 @@ def main(
 # ── Auth commands (top-level) ───────────────────────────────
 
 
+TOKEN_PAGE = "https://micro.blog/account/apps"
+TOKEN_ATTEMPTS = 3
+
+
+def _interactive() -> bool:
+    """Prompt only when a person is at a terminal; scripts and agents never see a prompt."""
+    return sys.stdin.isatty() and sys.stderr.isatty()
+
+
+def _say(message: str = "") -> None:
+    """Interactive narration goes to stderr so stdout stays the result envelope."""
+    typer.echo(message, err=True)
+
+
+def _prompt_token(profile: str) -> tuple[str, dict]:
+    """Ask for a token without echoing it until micro.blog accepts one; give up after three."""
+    _say(f"Create an app token at {TOKEN_PAGE} (Account, then Edit Apps) and paste it here.")
+    if profile != config.DEFAULT_PROFILE:
+        _say(f"It will be saved to profile {profile}.")
+    for attempt in range(1, TOKEN_ATTEMPTS + 1):
+        token = typer.prompt("Token (input hidden)", hide_input=True, err=True).strip()
+        if not token:
+            _say("No token entered.")
+            continue
+        result = MicroblogClient(token=token).verify_token()
+        # Only a rejected token is worth retyping; a network or server failure is reported.
+        if result["ok"] or result.get("code") != 401:
+            return token, result
+        if attempt < TOKEN_ATTEMPTS:
+            _say("micro.blog did not accept that token. Check it and try again.")
+    return "", {"ok": False, "error": "micro.blog rejected the token three times", "code": 401}
+
+
+def _default_choice(destinations: list[dict], current: str | None) -> int:
+    for index, destination in enumerate(destinations, 1):
+        if current and destination.get("uid", "").rstrip("/") == current.rstrip("/"):
+            return index
+    for index, destination in enumerate(destinations, 1):
+        if destination.get("microblog-default"):
+            return index
+    return 1
+
+
+def _pick_blog(token: str, current: str | None) -> str | None:
+    """List the account's blogs and ask which one to use when there is more than one."""
+    import click
+
+    client = MicroblogClient(token=token)
+    result = client.micropub_get_config()
+    if not result["ok"]:
+        _say(f"Could not list your blogs ({result.get('error')}); run mb blogs later.")
+        return current
+    destinations = [
+        d for d in result["data"].get("destination", []) if isinstance(d, dict) and d.get("uid")
+    ]
+    if len(destinations) <= 1:
+        if destinations:
+            _say(f"Blog: {destinations[0]['uid']}")
+        return current
+    _say("This account can post to several blogs:")
+    for index, destination in enumerate(destinations, 1):
+        name = destination.get("name") or ""
+        label = f"{name} ({destination['uid']})" if name and name != destination["uid"] else name
+        _say(f"  {index}. {label or destination['uid']}")
+    choice = typer.prompt(
+        "Which blog should mb use",
+        default=_default_choice(destinations, current),
+        type=click.IntRange(1, len(destinations)),
+        err=True,
+    )
+    return destinations[choice - 1]["uid"]
+
+
+def _next_steps() -> None:
+    _say("")
+    _say("Next:")
+    _say("  mb doctor       check the install, token and blog")
+    _say("  mb heartbeat    see what is new")
+    _say("  claude mcp add mb -- mb mcp --consumer claude-code --read-only")
+
+
 @app.command()
 def auth(
     ctx: typer.Context,
-    token: str = typer.Argument(
-        ..., help="micro.blog app token, or - to read it from stdin (keeps it out of shell history)"
+    token: str | None = typer.Argument(
+        None,
+        help="micro.blog app token, or - to read it from stdin. "
+        "Leave it out in a terminal to be prompted for the token and the blog.",
     ),
-    blog_dest: str = typer.Option(None, "--blog", help="Default blog destination for this profile"),
+    blog_dest: str | None = typer.Option(
+        None, "--blog", help="Default blog destination for this profile"
+    ),
 ):
-    """Store token and verify it works."""
+    """Save and verify a token; run it bare in a terminal for guided setup."""
     fmt = get_format(ctx)
     profile = get_profile(ctx)
-    if token == "-":
-        token = sys.stdin.read().strip()
-        if not token:
+    # Flexible global option parsing moves --blog into the parent context.
+    blog_dest = blog_dest or ctx.obj.get("blog")
+    guided = token is None
+    if token is None:
+        if not _interactive():
+            output(
+                {
+                    "ok": False,
+                    "error": "No token given. Pipe it to mb auth -, or run mb auth in a terminal",
+                    "code": 400,
+                },
+                fmt,
+            )
+            raise SystemExit(1)
+        secret, result = _prompt_token(profile)
+    else:
+        secret = sys.stdin.read().strip() if token == "-" else token
+        if not secret:
             output({"ok": False, "error": "No token on stdin", "code": 400}, fmt)
             raise SystemExit(1)
-    client = MicroblogClient(token=token)
-    result = client.verify_token()
-    if result["ok"]:
-        username = result["data"].get("username", "")
-        # Flexible global option parsing moves --blog into the parent context.
-        blog_dest = blog_dest or ctx.obj.get("blog")
-        config.save_config(token=token, username=username, blog=blog_dest, profile=profile)
-        data = {"username": username, "message": "Token saved", "profile": profile}
-        if blog_dest:
-            data["blog"] = blog_dest
-        output({"ok": True, "data": data}, fmt)
-    else:
+        result = MicroblogClient(token=secret).verify_token()
+    if not result["ok"]:
         output(result, fmt)
         raise SystemExit(1)
+    username = result["data"].get("username", "")
+    if guided:
+        _say(f"Signed in as @{username}.")
+        if not blog_dest:
+            blog_dest = _pick_blog(secret, config.get_blog(profile=profile))
+    config.save_config(token=secret, username=username, blog=blog_dest, profile=profile)
+    data = {"username": username, "message": "Token saved", "profile": profile}
+    if blog_dest:
+        data["blog"] = blog_dest
+    if guided:
+        _next_steps()
+        _say("")
+    output({"ok": True, "data": data}, fmt)
 
 
 @app.command()

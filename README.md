@@ -30,21 +30,31 @@ uv run mb --version
 
 ## Get a token and sign in
 
-1. On micro.blog, open **Account**, go to **Edit Apps** (the app tokens page), and generate a new app token. Menu labels on micro.blog may differ slightly; look for the place that lists app tokens.
-2. Give it to `mb` on stdin, so it never lands in your shell history:
+Run `mb auth` in a terminal:
 
-   ```bash
-   mb auth -            # paste the token, then press Enter and Ctrl-D
-   pbpaste | mb auth -  # or pipe it from the clipboard / a password manager
-   ```
+```text
+$ mb auth
+Create an app token at https://micro.blog/account/apps (Account, then Edit Apps) and paste it here.
+Token (input hidden):
+Signed in as @you.
+Blog: https://you.micro.blog/
+```
 
-   `mb auth TOKEN` also works but leaves the token in shell history. Add `--blog https://you.micro.blog/` to set the profile's default blog.
-3. Check it:
+It asks for the token without showing it, checks it with micro.blog, and asks again if micro.blog does not accept it. When the account can post to more than one blog, it lists them and asks which one `mb` should use. It saves the token and blog to `~/.config/mb/config.toml`, then suggests next steps. Run it again any time to replace the token or choose another blog; `mb --profile work auth` sets up a second profile.
 
-   ```bash
-   mb whoami    # account and blog
-   mb doctor    # full read-only health check
-   ```
+Scripts and agents never get a prompt: without a terminal, bare `mb auth` exits with an error. Give them the token on stdin instead, so it stays out of shell history:
+
+```bash
+pbpaste | mb auth -                          # from the clipboard or a password manager
+mb auth - --blog https://you.micro.blog/     # and set the profile's blog
+```
+
+`mb auth TOKEN` also works but leaves the token in shell history. Check the result with:
+
+```bash
+mb whoami    # account and blog
+mb doctor    # full read-only health check
+```
 
 `mb doctor` reports the version, Python and install method, every `mb` on your `PATH` (and which one shadows the others), whether MCP support is importable, config file permissions and profiles, where the token comes from, a live token check with your blogs and the selected destination, the state file and any pending or unknown write receipts (with how to resolve them), legacy checkpoints and the media root. Use `mb doctor --offline` to skip network checks. It exits 1 if anything is an error.
 
@@ -168,7 +178,7 @@ Global options go before or after the command:
 **Setup and diagnostics**
 
 ```text
-mb auth -|TOKEN [--blog URL]        Save and verify a token (prefer -, read from stdin)
+mb auth [-|TOKEN] [--blog URL]      Guided setup in a terminal; - reads the token from stdin
 mb whoami                           Signed-in account and blog
 mb profiles                         Configured profiles
 mb blogs                            Blogs this token can post to

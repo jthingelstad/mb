@@ -127,7 +127,12 @@ def _check_config(report: _Report, profile: str) -> str | None:
     path = config.CONFIG_FILE
     parsed = True
     if not path.exists():
-        report.add("config", WARN, f"No config file at {path}", "Run: mb auth - (paste the token)")
+        report.add(
+            "config",
+            WARN,
+            f"No config file at {path}",
+            "Run: mb auth (or pipe the token to mb auth -)",
+        )
         parsed = False
     else:
         if not _private(path):
@@ -143,7 +148,7 @@ def _check_config(report: _Report, profile: str) -> str | None:
         try:
             profiles = config.list_profiles()
         except config.ConfigError as exc:
-            report.add("config", ERROR, str(exc), "Fix the file, or run mb auth - to rewrite it")
+            report.add("config", ERROR, str(exc), "Fix the file, or run mb auth to rewrite it")
             parsed = False
         else:
             names = [p["name"] for p in profiles]
@@ -175,7 +180,7 @@ def _check_config(report: _Report, profile: str) -> str | None:
         "token",
         ERROR,
         f"No token for profile {profile}",
-        "Run: mb auth - (paste the token, then Ctrl-D)",
+        "Run: mb auth (or pipe the token to mb auth -)",
         source=None,
     )
     return None

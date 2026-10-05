@@ -1,5 +1,5 @@
 # Codex MCP server entry for mb. Add to ~/.codex/config.toml and adjust.
-# Run `mb auth -` first; never put a token in this file.
+# Run `mb auth` first; never put a token in this file.
 # Homebrew on Linux: /home/linuxbrew/.linuxbrew/bin/mb. Other installs: the path `command -v mb` prints.
 [mcp_servers.mb]
 command = "/opt/homebrew/bin/mb"
