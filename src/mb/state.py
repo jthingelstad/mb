@@ -105,38 +105,28 @@ class StateStore:
         with closing(sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True)) as db:
             return self._cursor_record(db, scope)
 
-    def acknowledge(
-        self, scope: str, value: str, expected_revision: int, *, native: bool = False
-    ) -> dict:
-        if native and (
-            not re.fullmatch(r"[0-9]{1,20}", value) or int(value) <= 0 or value != str(int(value))
-        ):
+    def acknowledge(self, scope: str, value: str, expected_revision: int) -> dict:
+        """Save a native-order checkpoint from a complete window, with its provenance."""
+        if not re.fullmatch(r"[0-9]{1,20}", value) or int(value) <= 0 or value != str(int(value)):
             raise StateConflict("Invalid native checkpoint")
         with self.connection() as db:
             record = self._cursor_record(db, scope)
             current, revision = record["value"], record["revision"]
-            if native and record["scheme"] == LEGACY_CURSOR:
+            if record["scheme"] == LEGACY_CURSOR:
                 raise CheckpointReviewRequired(
                     "Checkpoint requires operator review; no automatic migration"
                 )
             if revision != expected_revision:
                 if current == value and revision == expected_revision + 1:
-                    if not native:
-                        db.execute("DELETE FROM cursor_provenance WHERE scope=?", (scope,))
                     return {"checkpoint": value, "revision": revision, "already_applied": True}
                 raise StateConflict("Checkpoint changed; read a fresh window before acknowledging")
-            if not native and current is not None and int(value) < int(current):
-                raise StateConflict("Checkpoint cannot move backwards")
             db.execute(
                 "INSERT OR REPLACE INTO cursors VALUES (?,?,?)", (scope, value, revision + 1)
             )
-            if native:
-                db.execute(
-                    "INSERT OR REPLACE INTO cursor_provenance VALUES (?,?,?,?)",
-                    (scope, value, revision + 1, NATIVE_CURSOR),
-                )
-            else:
-                db.execute("DELETE FROM cursor_provenance WHERE scope=?", (scope,))
+            db.execute(
+                "INSERT OR REPLACE INTO cursor_provenance VALUES (?,?,?,?)",
+                (scope, value, revision + 1, NATIVE_CURSOR),
+            )
             return {"checkpoint": value, "revision": revision + 1, "already_applied": False}
 
     @staticmethod

@@ -18,6 +18,11 @@ class TestStripHtml:
     def test_nested_tags(self):
         assert strip_html("<div><p><a href='#'>link</a></p></div>") == "link"
 
+    def test_entities_are_decoded(self):
+        assert strip_html("<p>Tom &amp; Jerry&#8217;s &lt;b&gt; &quot;show&quot;</p>") == (
+            'Tom & Jerry’s <b> "show"'
+        )
+
 
 class TestOutputJson:
     def test_success_output(self, capsys):

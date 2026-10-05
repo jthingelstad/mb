@@ -368,18 +368,6 @@ def edit(
     )
 
 
-def _extract_post_id(post_id: str) -> int | None:
-    """Extract a numeric post ID from a bare ID or micro.blog URL.
-
-    Supports:
-      - Bare numeric ID: "85444185"
-      - micro.blog conversation URL: "https://micro.blog/username/85444185"
-
-    Returns None if the ID cannot be extracted.
-    """
-    return extract_post_id(post_id)
-
-
 @app.command()
 def reply(
     ctx: typer.Context,
@@ -402,7 +390,7 @@ def reply(
         output({"ok": False, "error": "Content is empty", "code": 400}, fmt)
         raise SystemExit(1)
 
-    numeric_id = _extract_post_id(post_id)
+    numeric_id = extract_post_id(post_id)
     if numeric_id is None:
         output(
             {"ok": False, "error": f"Cannot extract numeric post ID from: {post_id}", "code": 400},

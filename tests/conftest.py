@@ -22,6 +22,14 @@ def isolated_configuration(tmp_path, monkeypatch):
     monkeypatch.setattr(commands, "_VERIFIED_USERNAMES", {})
 
 
+def write_legacy_cursor(store, scope: str, value: str) -> None:
+    """Save a checkpoint the way pre-provenance clients did: no native provenance row."""
+    with store.connection() as db:
+        revision = store._cursor_record(db, scope)["revision"]
+        db.execute("INSERT OR REPLACE INTO cursors VALUES (?,?,?)", (scope, value, revision + 1))
+        db.execute("DELETE FROM cursor_provenance WHERE scope=?", (scope,))
+
+
 # ── Sample response data ────────────────────────────────────
 
 VERIFY_RESPONSE = {

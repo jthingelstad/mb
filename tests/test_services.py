@@ -100,7 +100,7 @@ def test_broken_upstream_paging_never_acknowledges(service, client):
 
 def test_inbox_recent_window_gap_is_reported(service, client):
     service.identity()
-    service.state.acknowledge(service._scope("inbox"), "10", 0, native=True)
+    service.state.acknowledge(service._scope("inbox"), "10", 0)
     client.get_mentions.return_value = {"ok": True, "data": {"items": [{"id": 30}, {"id": 29}]}}
     result = service.attention("inbox")["data"]
     assert result["coverage"] == "recent-mentions-window"
@@ -206,8 +206,10 @@ def test_cursor_compare_and_swap(tmp_path):
     state.acknowledge("dot", "100", 0)
     with pytest.raises(StateConflict):
         state.acknowledge("dot", "200", 0)
-    with pytest.raises(StateConflict):
-        state.acknowledge("dot", "99", 1)
+    assert state.acknowledge("dot", "100", 0)["already_applied"]
+    for invalid in ["0", "-1", "abc", "0100"]:
+        with pytest.raises(StateConflict):
+            state.acknowledge("dot", invalid, 1)
     assert state.cursor("openclaw") == (None, 0)
 
 

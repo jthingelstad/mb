@@ -533,7 +533,7 @@ class MicroblogService:
             return {
                 "ok": True,
                 "data": self.state.acknowledge(
-                    record["scope"], record["value"], record["revision"], native=True
+                    record["scope"], record["value"], record["revision"]
                 ),
             }
         except CheckpointReviewRequired as exc:

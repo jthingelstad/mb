@@ -4,6 +4,7 @@ import json
 import re
 import sys
 from datetime import datetime, timezone
+from html import unescape
 
 from rich.console import Console
 from rich.markup import escape
@@ -11,8 +12,8 @@ from rich.table import Table
 
 
 def strip_html(html: str) -> str:
-    """Remove HTML tags from a string."""
-    return re.sub(r"<[^>]+>", "", html)
+    """Remove HTML tags and decode entities such as &amp; and &#8217;."""
+    return unescape(re.sub(r"<[^>]+>", "", html))
 
 
 def _relative_time(timestamp: str) -> str:

@@ -7,6 +7,7 @@ import pytest
 
 from mb.api import MicroblogClient
 from mb.services import MicroblogService
+from tests.conftest import write_legacy_cursor
 
 
 def make_service(
@@ -187,7 +188,7 @@ def test_recovery_metadata_does_not_persist_echoed_token(tmp_path):
 def test_profile_aliases_share_identity_state_but_other_principals_do_not(tmp_path):
     first, client = make_service(tmp_path)
     first.identity()
-    first.state.acknowledge(first._scope("catchup"), "10", 0)
+    write_legacy_cursor(first.state, first._scope("catchup"), "10")
     client.micropub_create.return_value = {
         "ok": True,
         "data": {"url": "https://public.example/post"},
@@ -239,7 +240,7 @@ def test_custom_url_selection_resolves_to_native_uid(tmp_path):
 def test_different_destination_keeps_read_and_publication_state_separate(tmp_path):
     first, client = make_service(tmp_path)
     first.identity()
-    first.state.acknowledge(first._scope("catchup"), "10", 0)
+    write_legacy_cursor(first.state, first._scope("catchup"), "10")
     client.micropub_create.return_value = {
         "ok": True,
         "data": {"url": "https://public.example/post"},

@@ -11,6 +11,7 @@ import pytest
 from mb.api import MicroblogClient
 from mb.domain import _build_thread
 from mb.services import MicroblogService, read_conversation
+from tests.conftest import write_legacy_cursor
 
 
 def service_at(tmp_path, username="agent", blog="https://agent.micro.blog/"):
@@ -283,7 +284,7 @@ def test_timeline_preserves_native_order_and_uses_last_returned_id(tmp_path):
 def test_inbox_cannot_acknowledge_a_numeric_guess_of_checkpoint(tmp_path, ids):
     service, client = service_at(tmp_path)
     service.identity()
-    service.state.acknowledge(service._scope("inbox"), "100", 0)
+    write_legacy_cursor(service.state, service._scope("inbox"), "100")
     client.get_mentions.return_value = {"ok": True, "data": {"items": [{"id": i} for i in ids]}}
     result = service.attention("inbox")
     if result["ok"]:
@@ -298,7 +299,7 @@ def test_inbox_cannot_acknowledge_a_numeric_guess_of_checkpoint(tmp_path, ids):
 def test_inbox_exact_checkpoint_proves_prefix_only(tmp_path):
     service, client = service_at(tmp_path)
     service.identity()
-    service.state.acknowledge(service._scope("inbox"), "100", 0, native=True)
+    service.state.acknowledge(service._scope("inbox"), "100", 0)
     client.get_mentions.return_value = {
         "ok": True,
         "data": {"items": [{"id": i} for i in [110, 100, 90]]},
@@ -312,7 +313,7 @@ def test_inbox_exact_checkpoint_proves_prefix_only(tmp_path):
 def test_legacy_checkpoint_does_not_gain_trust_from_native_exhaustion(tmp_path):
     service, client = service_at(tmp_path)
     service.identity()
-    service.state.acknowledge(service._scope("catchup"), "100", 0)
+    write_legacy_cursor(service.state, service._scope("catchup"), "100")
     client.get_timeline.side_effect = [
         {"ok": True, "data": {"items": [{"id": 90}]}},
         {"ok": True, "data": {"items": []}},

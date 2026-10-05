@@ -1,7 +1,7 @@
 """Tests for newer post, search, formatter, and username helper features."""
 
 from mb.commands import _extract_author_username, _micropub_item_url, resolve_post_url
-from mb.commands.post import _extract_post_id
+from mb.commands import extract_post_id as _extract_post_id
 from mb.formatters import _extract_username, output_agent
 
 
@@ -27,12 +27,14 @@ class TestMicropubUpdate:
         )
         assert result["ok"] is True
 
-    def test_update_nothing_returns_error(self, mock_client):
-        result = mock_client.micropub_update(
-            "https://testuser.micro.blog/2026/02/28/hello.html",
+    def test_update_nothing_is_refused_by_the_service(self, tmp_path, mock_client):
+        from mb.services import MicroblogService
+
+        service = MicroblogService(mock_client, "default", None, "cli", tmp_path / "s.sqlite")
+        result = service.write(
+            "post_edit", "nothing", {"identifier": "https://testuser.micro.blog/x.html"}
         )
-        assert result["ok"] is False
-        assert "Nothing to update" in result["error"]
+        assert result["ok"] is False and result["error"] == "Nothing to update"
 
 
 class TestMicropubGet:
