@@ -6,6 +6,7 @@ import sys
 from datetime import datetime, timezone
 
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 
@@ -91,6 +92,14 @@ def output_json(data: dict) -> None:
     """Print a JSON envelope to stdout."""
     json.dump(data, sys.stdout, indent=2)
     sys.stdout.write("\n")
+
+
+def _is_write_result(data: dict) -> bool:
+    """A single created/updated resource: an ID, or a URL from a receipt-bearing write."""
+    payload = data.get("data")
+    if not isinstance(payload, dict) or "content_html" in payload:
+        return False
+    return "id" in payload or ("url" in payload and "operation_id" in data)
 
 
 def output_human(data: dict) -> None:
@@ -343,9 +352,12 @@ def output_human(data: dict) -> None:
             )
         return
 
-    # Single post
-    if "id" in payload and "url" in payload and "content_html" not in payload:
-        console.print(f"[green]OK[/green] id={payload['id']} url={payload['url']}")
+    # Single write result
+    if _is_write_result(data):
+        detail = f"id={payload['id']} " if payload.get("id") else ""
+        console.print("[green]OK[/green] " + escape(f"{detail}url={payload.get('url', '')}"))
+        if payload.get("preview"):
+            console.print(f"preview={payload['preview']}", markup=False)
         return
 
     # User info
@@ -587,8 +599,14 @@ def output_agent(data: dict) -> None:
         return
 
     # Single result fallback
-    if "id" in payload:
-        print(f"OK id={payload.get('id')} url={payload.get('url', '')}")
+    if _is_write_result(data):
+        line = "OK"
+        if payload.get("id"):
+            line += f" id={payload['id']}"
+        line += f" url={payload.get('url', '')}"
+        if payload.get("preview"):
+            line += f" preview={payload['preview']}"
+        print(line)
         return
 
     if "username" in payload:

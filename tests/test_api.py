@@ -129,7 +129,8 @@ class TestMicropub:
         result = mock_client.micropub_create(content="Hello world")
         assert result["ok"] is True
         assert "url" in result["data"]
-        assert result["data"]["id"] == "newpost.html"
+        # The Location slug is not a Micro.blog ID, so no ID is invented.
+        assert "id" not in result["data"]
 
     def test_create_draft(self, mock_client):
         result = mock_client.micropub_create(content="Draft", draft=True)

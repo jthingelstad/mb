@@ -537,8 +537,14 @@ class MicroblogClient:
                 "code": 502,
                 "outcome": "unknown",
             }
-        post_id = location.rstrip("/").split("/")[-1] if location else ""
-        data = {"url": location, "id": post_id}
+        data: dict = {"url": location}
+        # A Location slug such as "hello.html" is not a Micro.blog ID; address posts by URL.
+        # Report an ID only when the response states a numeric one.
+        reported = payload.get("id")
+        if isinstance(reported, int) and not isinstance(reported, bool) and reported > 0:
+            data["id"] = str(reported)
+        elif isinstance(reported, str) and reported.isdigit():
+            data["id"] = reported
         # Draft preview links are returned to the caller, never copied into durable receipts.
         if isinstance(payload.get("preview"), str):
             data["preview"] = payload["preview"]
