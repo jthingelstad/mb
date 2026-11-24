@@ -3,10 +3,10 @@ name: live smoke
 # Exercises a real micro.blog test account: guided sign-in, CLI and MCP reads validated
 # against the published schemas, and a draft/edit/publish/delete cycle on the test blog.
 # Dispatch with suite=full for scripts/live_qa.py, which covers every command.
+# Runs only on demand, when there is a new build to test (Jamie, 2026-11-24): mb changes only
+# with a build, so a weekly run tested nothing new and its failures were noise.
 # Never runs on pull requests, so the token is only available to code already on main.
 on:
-  schedule:
-    - cron: "17 13 * * 1" # Mondays, 08:17 US Central (CDT)
   workflow_dispatch:
     inputs:
       suite:
